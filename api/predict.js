@@ -6,7 +6,8 @@
  * 2. Engineer features using crypto-features.js or forex-features.js
  * 3. Load trained Keras model
  * 4. Run prediction
- * 5. Return result
+ * 5. Store prediction in MongoDB (NEW)
+ * 6. Return result
  * 
  * IMPORTANT: Models expect features in the EXACT format they were trained with
  * Do NOT skip feature engineering or features will mismatch
@@ -38,12 +39,10 @@ async function loadModel(assetClass, modelName) {
     return modelsCache[cacheKey];
   }
 
-  const modelPath = path.join(
-    __dirname,
-    `../models/${assetClass}/${modelName}.keras`
-  );
+  // ✅ FIXED: Use process.cwd() instead of __dirname for Vercel compatibility
+  const modelPath = path.join(process.cwd(), `models/${assetClass}/${modelName}.keras`);
 
-  const fileUrl = `file://${path.resolve(modelPath)}`;
+  const fileUrl = `file://${modelPath}`;
 
   try {
     const model = await tf.loadLayersModel(fileUrl);
@@ -103,10 +102,10 @@ function engineFeatures(rawData, assetClass) {
 
     // Engineer features using the appropriate script
     // These MUST match your training pipeline exactly
-    const engineeredData = engineer.engineer_features(rawData);
+    const engineeredData = engineer.engineerFeatures(rawData);
 
     // Get feature list (engineered_data has these columns)
-    const featureList = engineer.get_feature_list();
+    const featureList = engineer.getFeatureList();
 
     if (!featureList || featureList.length === 0) {
       throw new Error('No features engineered');
@@ -131,11 +130,11 @@ function engineFeatures(rawData, assetClass) {
 function extractFeatureValues(engineeredData, assetClass) {
   try {
     const engineer = getFeatureEngineer(assetClass);
-    const featureList = engineer.get_feature_list();
+    const featureList = engineer.getFeatureList();
 
     // Get the last row of engineered data (most recent)
     // Most recent data is at the end of the engineered DataFrame
-    const lastRowIndex = engineeredData.length - 1;
+    const lastRowIndex = engineeredData[Object.keys(engineeredData)[0]].length - 1;
 
     // Extract values in the EXACT order they were in during training
     const features = [];
@@ -267,7 +266,56 @@ function ensemblePredictions(predictions) {
 }
 
 // ============================================================================
-// Main Handler
+// MongoDB Storage Integration (NEW)
+// ============================================================================
+
+/**
+ * Store prediction in MongoDB via internal API
+ * Non-blocking - doesn't fail the request if storage fails
+ * 
+ * @param {Object} predictionData - Prediction data to store
+ * @param {Object} req - Request object for base URL
+ */
+async function storePrediction(predictionData, req) {
+  try {
+    // Determine base URL
+    const protocol = req.headers['x-forwarded-proto'] || 'http';
+    const host = req.headers['x-forwarded-host'] || req.headers.host || 'localhost:3000';
+    const baseUrl = `${protocol}://${host}`;
+    
+    // Use Vercel URL if available, otherwise construct from headers
+    const apiUrl = process.env.VERCEL_URL 
+      ? `https://${process.env.VERCEL_URL}/api/store-prediction`
+      : `${baseUrl}/api/store-prediction`;
+
+    console.log('  → Storing prediction to MongoDB...');
+
+    const response = await fetch(apiUrl, {
+      method: 'POST',
+      headers: { 
+        'Content-Type': 'application/json',
+        'User-Agent': 'TradingModels-Internal/1.0'
+      },
+      body: JSON.stringify(predictionData),
+      timeout: 3000 // 3 second timeout
+    });
+
+    if (response.ok) {
+      const result = await response.json();
+      console.log('  ✓ Prediction stored in MongoDB:', result.id || 'success');
+      return { success: true, id: result.id };
+    } else {
+      const errorText = await response.text();
+      console.warn('  ⚠️ MongoDB storage failed:', response.status, errorText);
+      return { success: false, error: `HTTP ${response.status}` };
+    }
+  } catch (error) {
+    console.warn('  ⚠️ MongoDB storage error:', error.message);
+    return { success: false, error: error.message };
+  }
+}
+// ============================================================================
+// Main Handler (CONTINUED)
 // ============================================================================
 
 /**
@@ -310,7 +358,9 @@ function ensemblePredictions(predictions) {
  *     "up": 0.85
  *   },
  *   "models_used": 5,
- *   "timestamp": "2024-01-15T10:30:00Z"
+ *   "inference_time_ms": 123,
+ *   "timestamp": "2024-01-15T10:30:00Z",
+ *   "stored": true
  * }
  */
 module.exports = async (req, res) => {
@@ -354,12 +404,12 @@ module.exports = async (req, res) => {
     }
 
     // Step 1: Engineer features
-    console.log('  [1/4] Engineering features...');
+    console.log('  [1/5] Engineering features...');
     const engineeredData = engineFeatures(data, asset_class);
     const featureVector = extractFeatureValues(engineeredData, asset_class);
 
     // Step 2: Select models for ensemble
-    console.log('  [2/4] Loading models...');
+    console.log('  [2/5] Loading models...');
     const modelNames = selectModel(asset_class);
     const models = [];
 
@@ -380,7 +430,7 @@ module.exports = async (req, res) => {
     }
 
     // Step 3: Run predictions
-    console.log(`  [3/4] Running predictions with ${models.length} models...`);
+    console.log(`  [3/5] Running predictions with ${models.length} models...`);
     const predictions = [];
 
     for (const { name, model } of models) {
@@ -400,15 +450,45 @@ module.exports = async (req, res) => {
       });
     }
 
-    // Step 4: Ensemble and return
-    console.log('  [4/4] Ensembling results...');
+    // Step 4: Ensemble results
+    console.log('  [4/5] Ensembling results...');
     const result = ensemblePredictions(predictions);
 
     const classNames = ['DOWN', 'NEUTRAL', 'UP'];
     const elapsed = Date.now() - startTime;
 
+    // Step 5: Store prediction in MongoDB (NEW - Non-blocking)
+    console.log('  [5/5] Storing prediction...');
+    
+    const predictionData = {
+      symbol: symbol,
+      asset_class: asset_class,
+      prediction: result.class,
+      class: classNames[result.class],
+      confidence: result.confidence,
+      probabilities: result.probabilities,
+      models_used: models.length,
+      inference_time_ms: elapsed,
+      timestamp: new Date().toISOString()
+    };
+
+    // Store prediction asynchronously - don't block response
+    // If storage fails, we still return the prediction successfully
+    let storageResult = { success: false };
+    try {
+      storageResult = await Promise.race([
+        storePrediction(predictionData, req),
+        new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Storage timeout')), 3000)
+        )
+      ]);
+    } catch (storageError) {
+      console.warn('  ⚠️ Storage failed (timeout or error):', storageError.message);
+    }
+
     console.log(`✅ Prediction complete (${elapsed}ms)`);
 
+    // Return response with storage status
     return res.status(200).json({
       success: true,
       symbol: symbol,
@@ -419,7 +499,9 @@ module.exports = async (req, res) => {
       probabilities: result.probabilities,
       models_used: models.length,
       inference_time_ms: elapsed,
-      timestamp: new Date().toISOString(),
+      timestamp: predictionData.timestamp,
+      stored: storageResult.success, // Indicates if MongoDB storage succeeded
+      storage_id: storageResult.id || null // MongoDB document ID if stored
     });
   } catch (error) {
     console.error('❌ Prediction error:', error.message);
@@ -428,6 +510,32 @@ module.exports = async (req, res) => {
       success: false,
       error: error.message,
       timestamp: new Date().toISOString(),
+    });
+  }
+};
+
+// ============================================================================
+// Health Check Endpoint (Optional)
+// ============================================================================
+
+/**
+ * Health check for monitoring
+ * GET /api/predict?health=true
+ */
+module.exports.health = async (req, res) => {
+  if (req.query.health === 'true') {
+    const modelStats = {
+      crypto_models_cached: Object.keys(modelsCache).filter(k => k.startsWith('crypto')).length,
+      forex_models_cached: Object.keys(modelsCache).filter(k => k.startsWith('forex')).length,
+      engineers_cached: Object.keys(featureEngineersCache).length,
+    };
+
+    return res.status(200).json({
+      status: 'healthy',
+      uptime: process.uptime(),
+      memory: process.memoryUsage(),
+      cache: modelStats,
+      timestamp: new Date().toISOString()
     });
   }
 };

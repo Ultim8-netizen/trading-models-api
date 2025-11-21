@@ -12,7 +12,7 @@
  * ✓ Add bidirectional momentum features
  */
 
-class AsymmetricMarketFeatures {
+class CryptoFeatureEngineer {
     constructor() {
         // RESET lists on each init
         this.featureNames = [];
@@ -239,15 +239,15 @@ class AsymmetricMarketFeatures {
             const c = df[`${tf}_close`];
             
             // Basic metrics
-            df[`${tf}_return`] = AsymmetricMarketFeatures.safeDivide(
+            df[`${tf}_return`] = CryptoFeatureEngineer.safeDivide(
                 c.map((val, i) => val - o[i]), o
             );
             
-            df[`${tf}_range`] = AsymmetricMarketFeatures.safeDivide(
+            df[`${tf}_range`] = CryptoFeatureEngineer.safeDivide(
                 h.map((val, i) => val - l[i]), c
             );
             
-            df[`${tf}_body_ratio`] = AsymmetricMarketFeatures.safeDivide(
+            df[`${tf}_body_ratio`] = CryptoFeatureEngineer.safeDivide(
                 c.map((val, i) => Math.abs(val - o[i])),
                 h.map((val, i) => val - l[i])
             );
@@ -269,7 +269,7 @@ class AsymmetricMarketFeatures {
         const high = df[`${tf}_high`];
         const low = df[`${tf}_low`];
         const close = df[`${tf}_close`];
-        const closePrev = AsymmetricMarketFeatures.shift(close, 1);
+        const closePrev = CryptoFeatureEngineer.shift(close, 1);
         
         const tr = high.map((h, i) => {
             const l = low[i];
@@ -283,7 +283,7 @@ class AsymmetricMarketFeatures {
             );
         });
         
-        const atr = AsymmetricMarketFeatures.rollingWindow(
+        const atr = CryptoFeatureEngineer.rollingWindow(
             tr, period, Math.max(1, Math.floor(period / 2))
         );
         
@@ -299,7 +299,7 @@ class AsymmetricMarketFeatures {
         
         if (!this._cachedVolMa[cacheKey]) {
             if (df[`${tf}_volume`]) {
-                const volMa = AsymmetricMarketFeatures.rollingWindow(
+                const volMa = CryptoFeatureEngineer.rollingWindow(
                     df[`${tf}_volume`], window, Math.floor(window / 2)
                 );
                 this._cachedVolMa[cacheKey] = volMa;
@@ -319,7 +319,7 @@ class AsymmetricMarketFeatures {
             (close[i] - low[i]) - (h - close[i])
         );
         const denominator = high.map((h, i) => h - low[i]);
-        return AsymmetricMarketFeatures.safeDivide(numerator, denominator, 0.0);
+        return CryptoFeatureEngineer.safeDivide(numerator, denominator, 0.0);
     }
     
     _canAddBullish() {
@@ -335,15 +335,11 @@ class AsymmetricMarketFeatures {
     }
 }
 
-// Export for use in other modules
-if (typeof module !== 'undefined' && module.exports) {
-    module.exports = AsymmetricMarketFeatures;
-}
 /**
  * Crypto Feature Engineering v7.1 - Part 2
  * Directional Features and Balance Logic
  * 
- * This extends the AsymmetricMarketFeatures class from Part 1
+ * This extends the CryptoFeatureEngineer class from Part 1
  * Add these methods to the class or use as a mixin
  */
 
@@ -351,7 +347,7 @@ if (typeof module !== 'undefined' && module.exports) {
 // A. DIRECTIONAL FEATURE SETS (BALANCED) - CRITICAL FIX
 // ========================================================================
 
-AsymmetricMarketFeatures.prototype.addDirectionalFeatures = function(df) {
+CryptoFeatureEngineer.prototype.addDirectionalFeatures = function(df) {
     /**
      * CRITICAL FIX: Strictly balanced bullish/bearish features
      * MAX 15 BULLISH + 15 BEARISH to prevent directional bias
@@ -364,11 +360,11 @@ AsymmetricMarketFeatures.prototype.addDirectionalFeatures = function(df) {
     
     // 1. Volume on breakout UP
     if (this._canAddBullish() && df['1h_high'] && df['1h_volume'] && volMa) {
-        const past10High = AsymmetricMarketFeatures.rollingMax(
-            AsymmetricMarketFeatures.shift(df['1h_high'], 1), 10, 5
+        const past10High = CryptoFeatureEngineer.rollingMax(
+            CryptoFeatureEngineer.shift(df['1h_high'], 1), 10, 5
         );
         const breakoutHigh = df['1h_high'].map((h, i) => h > (past10High[i] || 0));
-        const volSurge = AsymmetricMarketFeatures.safeDivide(df['1h_volume'], volMa);
+        const volSurge = CryptoFeatureEngineer.safeDivide(df['1h_volume'], volMa);
         
         df['volume_on_breakout_up'] = breakoutHigh.map((b, i) => 
             b ? volSurge[i] : 0
@@ -379,21 +375,21 @@ AsymmetricMarketFeatures.prototype.addDirectionalFeatures = function(df) {
     // 2. Accumulation volume
     if (this._canAddBullish() && df['1h_volume'] && df['1h_high'] && df['1h_low'] && df['1h_close']) {
         const clv = this._safeClv(df['1h_high'], df['1h_low'], df['1h_close']);
-        const clvPositive = AsymmetricMarketFeatures.safeClip(clv, 0, null);
+        const clvPositive = CryptoFeatureEngineer.safeClip(clv, 0, null);
         
-        const accumulation = AsymmetricMarketFeatures.rollingSum(
+        const accumulation = CryptoFeatureEngineer.rollingSum(
             clvPositive.map((c, i) => c * df['1h_volume'][i]), 24, 12
         );
-        const volTotal = AsymmetricMarketFeatures.rollingSum(df['1h_volume'], 24, 12);
+        const volTotal = CryptoFeatureEngineer.rollingSum(df['1h_volume'], 24, 12);
         
-        df['accumulation_volume'] = AsymmetricMarketFeatures.safeDivide(accumulation, volTotal);
+        df['accumulation_volume'] = CryptoFeatureEngineer.safeDivide(accumulation, volTotal);
         this.bullishFeatures.push('accumulation_volume');
     }
     
     // 3. Support bounce strength
     if (this._canAddBullish() && df['4h_low'] && df['1h_close'] && df['1h_volume'] && volMa) {
-        const support = AsymmetricMarketFeatures.rollingMin(df['4h_low'], 20, 10);
-        const distToSupport = AsymmetricMarketFeatures.safeDivide(
+        const support = CryptoFeatureEngineer.rollingMin(df['4h_low'], 20, 10);
+        const distToSupport = CryptoFeatureEngineer.safeDivide(
             df['1h_close'].map((c, i) => c - (support[i] || 0)),
             support
         );
@@ -401,7 +397,7 @@ AsymmetricMarketFeatures.prototype.addDirectionalFeatures = function(df) {
         const nearSupport = distToSupport.map(d => 
             (d >= -0.02 && d <= 0.03) ? 1 : 0
         );
-        const volSurge = AsymmetricMarketFeatures.safeDivide(df['1h_volume'], volMa);
+        const volSurge = CryptoFeatureEngineer.safeDivide(df['1h_volume'], volMa);
         
         df['support_bounce_strength'] = nearSupport.map((n, i) => n * volSurge[i]);
         this.bullishFeatures.push('support_bounce_strength');
@@ -409,23 +405,23 @@ AsymmetricMarketFeatures.prototype.addDirectionalFeatures = function(df) {
     
     // 4. Bullish momentum (1h)
     if (this._canAddBullish() && df['1h_close']) {
-        const mom3h = AsymmetricMarketFeatures.pctChange(df['1h_close'], 3);
-        df['bullish_momentum_1h'] = AsymmetricMarketFeatures.safeClip(mom3h, 0, null);
+        const mom3h = CryptoFeatureEngineer.pctChange(df['1h_close'], 3);
+        df['bullish_momentum_1h'] = CryptoFeatureEngineer.safeClip(mom3h, 0, null);
         this.bullishFeatures.push('bullish_momentum_1h');
     }
     
     // 5. Bullish momentum (4h)
     if (this._canAddBullish() && df['4h_close']) {
-        const mom12h = AsymmetricMarketFeatures.pctChange(df['4h_close'], 3);
-        df['bullish_momentum_4h'] = AsymmetricMarketFeatures.safeClip(mom12h, 0, null);
+        const mom12h = CryptoFeatureEngineer.pctChange(df['4h_close'], 3);
+        df['bullish_momentum_4h'] = CryptoFeatureEngineer.safeClip(mom12h, 0, null);
         this.bullishFeatures.push('bullish_momentum_4h');
     }
     
     // 6. Higher highs pattern
     if (this._canAddBullish() && df['1h_high']) {
         const high = df['1h_high'];
-        const shift1 = AsymmetricMarketFeatures.shift(high, 1);
-        const shift2 = AsymmetricMarketFeatures.shift(high, 2);
+        const shift1 = CryptoFeatureEngineer.shift(high, 1);
+        const shift2 = CryptoFeatureEngineer.shift(high, 2);
         
         df['higher_highs'] = high.map((h, i) => 
             (h > (shift1[i] || 0) && (shift1[i] || 0) > (shift2[i] || 0)) ? 1.0 : 0.0
@@ -436,7 +432,7 @@ AsymmetricMarketFeatures.prototype.addDirectionalFeatures = function(df) {
     // 7. Bullish body strength
     if (this._canAddBullish() && df['1h_open'] && df['1h_close'] && df['1h_high'] && df['1h_low']) {
         const bullishCandle = df['1h_close'].map((c, i) => c > df['1h_open'][i] ? 1.0 : 0.0);
-        const bodySize = AsymmetricMarketFeatures.safeDivide(
+        const bodySize = CryptoFeatureEngineer.safeDivide(
             df['1h_close'].map((c, i) => c - df['1h_open'][i]),
             df['1h_high'].map((h, i) => h - df['1h_low'][i])
         );
@@ -452,9 +448,9 @@ AsymmetricMarketFeatures.prototype.addDirectionalFeatures = function(df) {
             return c > prev ? 1.0 : 0.0;
         });
         
-        const volRatio = AsymmetricMarketFeatures.safeDivide(
+        const volRatio = CryptoFeatureEngineer.safeDivide(
             df['1h_volume'],
-            AsymmetricMarketFeatures.rollingWindow(df['1h_volume'], 20, 10)
+            CryptoFeatureEngineer.rollingWindow(df['1h_volume'], 20, 10)
         );
         
         df['positive_volume_delta'] = priceUp.map((p, i) => p * volRatio[i]);
@@ -465,11 +461,11 @@ AsymmetricMarketFeatures.prototype.addDirectionalFeatures = function(df) {
     
     // 1. Volume on breakdown
     if (this._canAddBearish() && df['1h_low'] && df['1h_volume'] && volMa) {
-        const past10Low = AsymmetricMarketFeatures.rollingMin(
-            AsymmetricMarketFeatures.shift(df['1h_low'], 1), 10, 5
+        const past10Low = CryptoFeatureEngineer.rollingMin(
+            CryptoFeatureEngineer.shift(df['1h_low'], 1), 10, 5
         );
         const breakdownLow = df['1h_low'].map((l, i) => l < (past10Low[i] || Infinity));
-        const volSurge = AsymmetricMarketFeatures.safeDivide(df['1h_volume'], volMa);
+        const volSurge = CryptoFeatureEngineer.safeDivide(df['1h_volume'], volMa);
         
         df['volume_on_breakdown'] = breakdownLow.map((b, i) => b ? volSurge[i] : 0);
         this.bearishFeatures.push('volume_on_breakdown');
@@ -478,51 +474,51 @@ AsymmetricMarketFeatures.prototype.addDirectionalFeatures = function(df) {
     // 2. Distribution patterns
     if (this._canAddBearish() && df['1h_volume'] && df['1h_high'] && df['1h_low'] && df['1h_close']) {
         const clv = this._safeClv(df['1h_high'], df['1h_low'], df['1h_close']);
-        const clvNegative = AsymmetricMarketFeatures.safeClip(clv, null, 0);
+        const clvNegative = CryptoFeatureEngineer.safeClip(clv, null, 0);
         const clvNegativeAbs = clvNegative.map(v => Math.abs(v));
         
-        const distribution = AsymmetricMarketFeatures.rollingSum(
+        const distribution = CryptoFeatureEngineer.rollingSum(
             clvNegativeAbs.map((c, i) => c * df['1h_volume'][i]), 24, 12
         );
-        const volTotal = AsymmetricMarketFeatures.rollingSum(df['1h_volume'], 24, 12);
+        const volTotal = CryptoFeatureEngineer.rollingSum(df['1h_volume'], 24, 12);
         
-        df['distribution_patterns'] = AsymmetricMarketFeatures.safeDivide(distribution, volTotal);
+        df['distribution_patterns'] = CryptoFeatureEngineer.safeDivide(distribution, volTotal);
         this.bearishFeatures.push('distribution_patterns');
     }
     
     // 3. Resistance rejection strength
     if (this._canAddBearish() && df['4h_high'] && df['1h_high'] && df['1h_close'] && df['1h_volume'] && volMa) {
-        const resistance = AsymmetricMarketFeatures.rollingMax(df['4h_high'], 20, 10);
+        const resistance = CryptoFeatureEngineer.rollingMax(df['4h_high'], 20, 10);
         const rejection = df['1h_high'].map((h, i) => {
             const r = resistance[i] || 0;
             const c = df['1h_close'][i];
             return (h > r && c < r) ? 1 : 0;
         });
         
-        const volSurge = AsymmetricMarketFeatures.safeDivide(df['1h_volume'], volMa);
+        const volSurge = CryptoFeatureEngineer.safeDivide(df['1h_volume'], volMa);
         df['resistance_rejection_strength'] = rejection.map((r, i) => r * volSurge[i]);
         this.bearishFeatures.push('resistance_rejection_strength');
     }
     
     // 4. Bearish momentum (1h)
     if (this._canAddBearish() && df['1h_close']) {
-        const mom3h = AsymmetricMarketFeatures.pctChange(df['1h_close'], 3);
-        df['bearish_momentum_1h'] = AsymmetricMarketFeatures.safeClip(mom3h, null, 0).map(v => Math.abs(v));
+        const mom3h = CryptoFeatureEngineer.pctChange(df['1h_close'], 3);
+        df['bearish_momentum_1h'] = CryptoFeatureEngineer.safeClip(mom3h, null, 0).map(v => Math.abs(v));
         this.bearishFeatures.push('bearish_momentum_1h');
     }
     
     // 5. Bearish momentum (4h)
     if (this._canAddBearish() && df['4h_close']) {
-        const mom12h = AsymmetricMarketFeatures.pctChange(df['4h_close'], 3);
-        df['bearish_momentum_4h'] = AsymmetricMarketFeatures.safeClip(mom12h, null, 0).map(v => Math.abs(v));
+        const mom12h = CryptoFeatureEngineer.pctChange(df['4h_close'], 3);
+        df['bearish_momentum_4h'] = CryptoFeatureEngineer.safeClip(mom12h, null, 0).map(v => Math.abs(v));
         this.bearishFeatures.push('bearish_momentum_4h');
     }
     
     // 6. Lower lows pattern
     if (this._canAddBearish() && df['1h_low']) {
         const low = df['1h_low'];
-        const shift1 = AsymmetricMarketFeatures.shift(low, 1);
-        const shift2 = AsymmetricMarketFeatures.shift(low, 2);
+        const shift1 = CryptoFeatureEngineer.shift(low, 1);
+        const shift2 = CryptoFeatureEngineer.shift(low, 2);
         
         df['lower_lows'] = low.map((l, i) => 
             (l < (shift1[i] || Infinity) && (shift1[i] || Infinity) < (shift2[i] || Infinity)) ? 1.0 : 0.0
@@ -533,7 +529,7 @@ AsymmetricMarketFeatures.prototype.addDirectionalFeatures = function(df) {
     // 7. Bearish body strength
     if (this._canAddBearish() && df['1h_open'] && df['1h_close'] && df['1h_high'] && df['1h_low']) {
         const bearishCandle = df['1h_close'].map((c, i) => c < df['1h_open'][i] ? 1.0 : 0.0);
-        const bodySize = AsymmetricMarketFeatures.safeDivide(
+        const bodySize = CryptoFeatureEngineer.safeDivide(
             df['1h_open'].map((o, i) => o - df['1h_close'][i]),
             df['1h_high'].map((h, i) => h - df['1h_low'][i])
         );
@@ -549,9 +545,9 @@ AsymmetricMarketFeatures.prototype.addDirectionalFeatures = function(df) {
             return c < prev ? 1.0 : 0.0;
         });
         
-        const volRatio = AsymmetricMarketFeatures.safeDivide(
+        const volRatio = CryptoFeatureEngineer.safeDivide(
             df['1h_volume'],
-            AsymmetricMarketFeatures.rollingWindow(df['1h_volume'], 20, 10)
+            CryptoFeatureEngineer.rollingWindow(df['1h_volume'], 20, 10)
         );
         
         df['negative_volume_delta'] = priceDown.map((p, i) => p * volRatio[i]);
@@ -573,7 +569,7 @@ AsymmetricMarketFeatures.prototype.addDirectionalFeatures = function(df) {
 // B. DIRECTIONAL CLARITY FEATURES (NEW) - CRITICAL FOR NEUTRAL CLASS
 // ========================================================================
 
-AsymmetricMarketFeatures.prototype.addDirectionalClarityFeatures = function(df) {
+CryptoFeatureEngineer.prototype.addDirectionalClarityFeatures = function(df) {
     /**
      * NEW: Features that explicitly measure directional ambiguity
      * HIGH clarity = strong trend (class 0 or 2)
@@ -622,9 +618,9 @@ AsymmetricMarketFeatures.prototype.addDirectionalClarityFeatures = function(df) 
     
     // 2. Trend consistency across timeframes
     if (df['1h_close'] && df['4h_close'] && df['1d_close']) {
-        const h1Mom = AsymmetricMarketFeatures.pctChange(df['1h_close'], 3);
-        const h4Mom = AsymmetricMarketFeatures.pctChange(df['4h_close'], 1);
-        const d1Mom = AsymmetricMarketFeatures.pctChange(df['1d_close'], 1);
+        const h1Mom = CryptoFeatureEngineer.pctChange(df['1h_close'], 3);
+        const h4Mom = CryptoFeatureEngineer.pctChange(df['4h_close'], 1);
+        const d1Mom = CryptoFeatureEngineer.pctChange(df['1d_close'], 1);
         
         const sameSign1h4h = h1Mom.map((h1, i) => 
             ((h1 || 0) > 0) === ((h4Mom[i] || 0) > 0) ? 1 : 0
@@ -641,11 +637,11 @@ AsymmetricMarketFeatures.prototype.addDirectionalClarityFeatures = function(df) 
     
     // 3. Volatility-adjusted momentum
     if (df['1h_close'] && df['1h_atr']) {
-        const mom = AsymmetricMarketFeatures.pctChange(df['1h_close'], 3).map(v => Math.abs(v || 0));
-        const vol = AsymmetricMarketFeatures.safeDivide(df['1h_atr'], df['1h_close']);
+        const mom = CryptoFeatureEngineer.pctChange(df['1h_close'], 3).map(v => Math.abs(v || 0));
+        const vol = CryptoFeatureEngineer.safeDivide(df['1h_atr'], df['1h_close']);
         
-        df['choppiness_index'] = AsymmetricMarketFeatures.safeDivide(mom, vol, 0).map(v => 
-            AsymmetricMarketFeatures.safeClip([1 - v], 0, 1)[0]
+        df['choppiness_index'] = CryptoFeatureEngineer.safeDivide(mom, vol, 0).map(v => 
+            CryptoFeatureEngineer.safeClip([1 - v], 0, 1)[0]
         );
         this.neutralFeatures.push('choppiness_index');
     }
@@ -653,17 +649,17 @@ AsymmetricMarketFeatures.prototype.addDirectionalClarityFeatures = function(df) 
     // 4. Range compression
     if (df['1h_high'] && df['1h_low'] && df['1h_close']) {
         const currentRange = df['1h_high'].map((h, i) => h - df['1h_low'][i]);
-        const avgRange = AsymmetricMarketFeatures.rollingWindow(currentRange, 24, 12);
+        const avgRange = CryptoFeatureEngineer.rollingWindow(currentRange, 24, 12);
         
-        df['range_compression'] = AsymmetricMarketFeatures.safeDivide(currentRange, avgRange, 1).map(v => 
-            AsymmetricMarketFeatures.safeClip([1 - v], 0, 1)[0]
+        df['range_compression'] = CryptoFeatureEngineer.safeDivide(currentRange, avgRange, 1).map(v => 
+            CryptoFeatureEngineer.safeClip([1 - v], 0, 1)[0]
         );
         this.neutralFeatures.push('range_compression');
     }
     
     // 5. Sideways movement indicator
     if (df['1h_close']) {
-        const priceChange = AsymmetricMarketFeatures.pctChange(df['1h_close'], 10).map(v => Math.abs(v || 0));
+        const priceChange = CryptoFeatureEngineer.pctChange(df['1h_close'], 10).map(v => Math.abs(v || 0));
         df['sideways_movement'] = priceChange.map(pc => 1 / (1 + pc * 100));
         this.neutralFeatures.push('sideways_movement');
     }
@@ -674,22 +670,11 @@ AsymmetricMarketFeatures.prototype.addDirectionalClarityFeatures = function(df) 
     return df;
 };
 
-// Export for module systems
-if (typeof module !== 'undefined' && module.exports) {
-    module.exports = AsymmetricMarketFeatures;
-}
-/**
- * Crypto Feature Engineering v7.1 - Part 3
- * Context Features, Quality Checks, and Main Pipeline
- * 
- * This completes the AsymmetricMarketFeatures class
- */
-
 // ========================================================================
 // C. MINIMAL CONTEXT FEATURES (NO TREND BIAS)
 // ========================================================================
 
-AsymmetricMarketFeatures.prototype.addMinimalContextFeatures = function(df) {
+CryptoFeatureEngineer.prototype.addMinimalContextFeatures = function(df) {
     /**
      * Minimal context features WITHOUT trend bias
      * NO trend_strength, NO trend_with_decay (these dominated before)
@@ -724,7 +709,7 @@ AsymmetricMarketFeatures.prototype.addMinimalContextFeatures = function(df) {
     // 2. Volume regime (not directional)
     const volMa = this._calculateVolumeMa(df, '1h', 24);
     if (volMa && this._canAddNeutral()) {
-        const volSurge = AsymmetricMarketFeatures.safeDivide(df['1h_volume'], volMa);
+        const volSurge = CryptoFeatureEngineer.safeDivide(df['1h_volume'], volMa);
         
         df['volume_regime'] = volSurge.map(v => {
             if (v <= 0.8) return 0;
@@ -738,16 +723,16 @@ AsymmetricMarketFeatures.prototype.addMinimalContextFeatures = function(df) {
     // 3. Range expansion (neutral metric)
     if (df['1h_high'] && df['1h_low'] && this._canAddNeutral()) {
         const currentRange = df['1h_high'].map((h, i) => h - df['1h_low'][i]);
-        const avgRange = AsymmetricMarketFeatures.rollingWindow(currentRange, 24, 12);
+        const avgRange = CryptoFeatureEngineer.rollingWindow(currentRange, 24, 12);
         
-        df['range_expansion_ratio'] = AsymmetricMarketFeatures.safeDivide(currentRange, avgRange);
+        df['range_expansion_ratio'] = CryptoFeatureEngineer.safeDivide(currentRange, avgRange);
         this.neutralFeatures.push('range_expansion_ratio');
     }
     
     // 4. Price distance from moving average (absolute, not directional)
     if (df['1h_close'] && this._canAddNeutral()) {
-        const ma20 = AsymmetricMarketFeatures.rollingWindow(df['1h_close'], 20, 10);
-        const distFromMa = AsymmetricMarketFeatures.safeDivide(
+        const ma20 = CryptoFeatureEngineer.rollingWindow(df['1h_close'], 20, 10);
+        const distFromMa = CryptoFeatureEngineer.safeDivide(
             df['1h_close'].map((c, i) => Math.abs(c - (ma20[i] || c))),
             ma20
         );
@@ -765,7 +750,7 @@ AsymmetricMarketFeatures.prototype.addMinimalContextFeatures = function(df) {
 // FEATURE QUALITY & BALANCE ENFORCEMENT
 // ========================================================================
 
-AsymmetricMarketFeatures.prototype.enforceDirectionalBalance = function() {
+CryptoFeatureEngineer.prototype.enforceDirectionalBalance = function() {
     /**
      * CRITICAL: Force exact 50/50 bullish/bearish balance
      * Remove excess from larger group
@@ -796,7 +781,7 @@ AsymmetricMarketFeatures.prototype.enforceDirectionalBalance = function() {
     return removed;
 };
 
-AsymmetricMarketFeatures.prototype.checkFeatureQuality = function(df) {
+CryptoFeatureEngineer.prototype.checkFeatureQuality = function(df) {
     /**
      * Check and fix problematic features
      */
@@ -857,7 +842,7 @@ AsymmetricMarketFeatures.prototype.checkFeatureQuality = function(df) {
     
     if (problematic.length > 0) {
         console.log(`        ⚠ Found ${problematic.length} problematic features`);
-        const problematicNames = problematic.map(p => p.split(' ')[0]);
+        const problematicNames = problematic.map(p => p.split(' ')['0']);
         
         this.featureNames = this.featureNames.filter(f => !problematicNames.includes(f));
         this.bullishFeatures = this.bullishFeatures.filter(f => !problematicNames.includes(f));
@@ -876,7 +861,7 @@ AsymmetricMarketFeatures.prototype.checkFeatureQuality = function(df) {
 // MAIN PIPELINE
 // ========================================================================
 
-AsymmetricMarketFeatures.prototype.engineerFeatures = function(df, symbol = "UNKNOWN") {
+CryptoFeatureEngineer.prototype.engineerFeatures = function(df, symbol = "UNKNOWN") {
     /**
      * Main feature engineering pipeline v7.1 - DIRECTIONALLY BALANCED
      */
@@ -969,14 +954,14 @@ AsymmetricMarketFeatures.prototype.engineerFeatures = function(df, symbol = "UNK
 // UTILITY METHODS
 // ========================================================================
 
-AsymmetricMarketFeatures.prototype.getFeatureList = function() {
+CryptoFeatureEngineer.prototype.getFeatureList = function() {
     /**
      * Return list of engineered feature names
      */
     return this.featureNames;
 };
 
-AsymmetricMarketFeatures.prototype.getFeatureCategories = function() {
+CryptoFeatureEngineer.prototype.getFeatureCategories = function() {
     /**
      * Return features organized by category
      */
@@ -988,7 +973,7 @@ AsymmetricMarketFeatures.prototype.getFeatureCategories = function() {
     };
 };
 
-AsymmetricMarketFeatures.prototype.getBalanceReport = function() {
+CryptoFeatureEngineer.prototype.getBalanceReport = function() {
     /**
      * Get detailed balance report
      */
@@ -1009,7 +994,7 @@ AsymmetricMarketFeatures.prototype.getBalanceReport = function() {
     };
 };
 
-AsymmetricMarketFeatures.prototype.printBalanceReport = function() {
+CryptoFeatureEngineer.prototype.printBalanceReport = function() {
     /**
      * Print detailed balance report
      */
@@ -1077,7 +1062,7 @@ function createSampleData(n = 1000) {
 
 // Run example if in Node.js environment
 if (typeof require !== 'undefined' && require.main === module) {
-    const featureEngineer = new AsymmetricMarketFeatures();
+    const featureEngineer = new CryptoFeatureEngineer();
     const sampleDf = createSampleData(1000);
     
     const dfWithFeatures = featureEngineer.engineerFeatures(sampleDf, "BTC/USDT");
@@ -1100,7 +1085,4 @@ if (typeof require !== 'undefined' && require.main === module) {
     console.log(`\nTotal feature columns: ${featureEngineer.getFeatureList().length}`);
 }
 
-// Export for module systems
-if (typeof module !== 'undefined' && module.exports) {
-    module.exports = AsymmetricMarketFeatures;
-}
+module.exports = CryptoFeatureEngineer;

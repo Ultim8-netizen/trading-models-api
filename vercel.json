@@ -1,15 +1,14 @@
 {
   "version": 2,
-  "builds": [
-    {
-      "src": "api/predict.js",
-      "use": "@vercel/node"
+  "functions": {
+    "api/predict.js": {
+      "runtime": "nodejs18.x",
+      "memory": 3000,
+      "maxDuration": 30
     }
-  ],
-  "routes": [
-    {
-      "src": "/(.*)",
-      "dest": "/api/predict.js"
-    }
+  },
+  "includeFiles": [
+    "models/**/*.keras",
+    "models/**/*.pkl"
   ]
 }

@@ -1,0 +1,85 @@
+name: Scheduled Predictions (Every 4 Hours)
+
+on:
+  schedule:
+    # Run every 4 hours (0, 4, 8, 12, 16, 20 UTC)
+    - cron: '0 */4 * * *'
+  
+  # Allow manual trigger
+  workflow_dispatch
+
+jobs:
+  predict:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      
+      - name: Run predictions for Crypto
+        run: |
+          echo "🤖 Running crypto predictions..."
+          
+          # Example: BTC/USDT prediction
+          curl -X POST https://trading-models-api-xxx.vercel.app/api/predict \
+            -H "Content-Type: application/json" \
+            -d '{
+              "asset_class": "crypto",
+              "symbol": "BTC/USDT",
+              "data": {
+                "1h_open": [40000],
+                "1h_high": [40500],
+                "1h_low": [39500],
+                "1h_close": [40250],
+                "1h_volume": [1000],
+                "4h_open": [40000],
+                "4h_high": [40500],
+                "4h_low": [39500],
+                "4h_close": [40250],
+                "4h_volume": [4000],
+                "1d_open": [40000],
+                "1d_high": [40500],
+                "1d_low": [39500],
+                "1d_close": [40250],
+                "1d_volume": [24000]
+              }
+            }'
+          
+          echo "✓ Crypto prediction complete"
+      
+      - name: Run predictions for Forex
+        run: |
+          echo "🤖 Running forex predictions..."
+          
+          # Example: EUR/USD prediction
+          curl -X POST https://trading-models-api-xxx.vercel.app/api/predict \
+            -H "Content-Type: application/json" \
+            -d '{
+              "asset_class": "forex",
+              "symbol": "EUR/USD",
+              "data": {
+                "1h_open": [1.0900],
+                "1h_high": [1.0950],
+                "1h_low": [1.0850],
+                "1h_close": [1.0925],
+                "1h_volume": [500],
+                "4h_open": [1.0900],
+                "4h_high": [1.0950],
+                "4h_low": [1.0850],
+                "4h_close": [1.0925],
+                "4h_volume": [2000],
+                "1d_open": [1.0900],
+                "1d_high": [1.0950],
+                "1d_low": [1.0850],
+                "1d_close": [1.0925],
+                "1d_volume": [12000]
+              }
+            }'
+          
+          echo "✓ Forex prediction complete"
+      
+      - name: Notification
+        if: success()
+        run: |
+          echo "✅ All scheduled predictions completed"
+          echo "Results stored in MongoDB"

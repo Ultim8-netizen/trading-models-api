@@ -2,6 +2,8 @@
  * Conservative Feature Engineering v3.0 - PRODUCTION READY
  * Philosophy: Quality over quantity, historical data only
  * 
+ * VERCEL COMPATIBLE - Fixed export pattern
+ * 
  * STRICT RULES:
  * 1. Never use future data
  * 2. Never use pctChange() without explicit shift(1)
@@ -411,15 +413,11 @@ class ConservativeFeatureEngineer {
         return df;
     }
 }
-
-// Export for module systems
-if (typeof module !== 'undefined' && module.exports) {
-    module.exports = ConservativeFeatureEngineer;
-}
 /**
  * Conservative Feature Engineering v3.0 - Part 2
  * Simple Indicators, Main Pipeline, and Verification
  * 
+ * VERCEL COMPATIBLE - Fixed export pattern
  * This completes the ConservativeFeatureEngineer class
  */
 
@@ -735,12 +733,23 @@ if (typeof require !== 'undefined' && require.main === module) {
     runExample();
 }
 
-// Export for module systems
+// ========================================================================
+// VERCEL-COMPATIBLE EXPORT (CRITICAL FIX)
+// ========================================================================
+// ONLY export the class constructor - this matches your usage pattern:
+// new ConservativeFeatureEngineer()
+//
+// The utility functions are available as:
+// ConservativeFeatureEngineer.verifyNoLeakage
+// ConservativeFeatureEngineer.createSampleForexData
+// ConservativeFeatureEngineer.runExample
+
 if (typeof module !== 'undefined' && module.exports) {
-    module.exports = {
-        ConservativeFeatureEngineer,
-        verifyNoLeakage,
-        createSampleForexData,
-        runExample
-    };
+    // Primary export: the class itself
+    module.exports = ConservativeFeatureEngineer;
+    
+    // Attach utility functions as static properties
+    module.exports.verifyNoLeakage = verifyNoLeakage;
+    module.exports.createSampleForexData = createSampleForexData;
+    module.exports.runExample = runExample;
 }
