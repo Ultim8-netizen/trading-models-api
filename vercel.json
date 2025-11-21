@@ -3,7 +3,7 @@
   "functions": {
     "api/*.js": {
       "runtime": "nodejs18.x",
-      "memory": 3000,
+      "memory": 2048,
       "maxDuration": 30,
       "includeFiles": "models/**/*"
     }
