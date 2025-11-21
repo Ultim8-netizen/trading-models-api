@@ -4,7 +4,7 @@
   "description": "Trading ML models API - Crypto & Forex predictions",
   "main": "api/predict.js",
   "engines": {
-    "node": "18.x"
+    "node": "22.x"
   },
   "dependencies": {
     "@tensorflow/tfjs-node": "^4.22.0",
