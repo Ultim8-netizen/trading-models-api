@@ -1,0 +1,35 @@
+{
+  "name": "trading-models-api",
+  "version": "1.0.0",
+  "description": "Trading ML models API - Crypto & Forex predictions",
+  "main": "api/predict.js",
+  "engines": {
+    "node": "18.x"
+  },
+  "dependencies": {
+    "@tensorflow/tfjs-node": "^4.22.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1",
+    "vercel": "^34.0.0"
+  },
+  "scripts": {
+    "start": "node api/predict.js",
+    "dev": "nodemon --exec 'vercel dev'",
+    "deploy": "vercel",
+    "test": "node test-local.js"
+  },
+  "keywords": [
+    "trading",
+    "ml",
+    "keras",
+    "predictions",
+    "crypto",
+    "forex"
+  ],
+  "author": "",
+  "license": "MIT"
+}

@@ -1,0 +1,45 @@
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+dist/
+build/
+.env
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.pkl
+*.h5
+*.keras
+*.egg-info/
+.env/
+venv/
+.envrc
+
+# OS / Editor junk
+.DS_Store
+Thumbs.db
+
+# VSCode
+.vscode/settings.json
+.vscode/tasks.json
+.vscode/launch.json
+
+# Logs
+logs/
+*.log
+
+# Cache
+.cache/
+.temp/
+
+# Models / Large Files (optional)
+*.onnx
+*.tflite
+*.pb
+*.ckpt
+*.weights
