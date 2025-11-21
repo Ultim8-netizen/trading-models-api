@@ -6,7 +6,7 @@ on:
     - cron: '0 */4 * * *'
   
   # Allow manual trigger
-  workflow_dispatch
+  workflow_dispatch:
 
 jobs:
   predict:

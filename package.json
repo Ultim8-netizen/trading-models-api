@@ -14,12 +14,11 @@
     "mongodb": "^7.0.0"
   },
   "devDependencies": {
-    "nodemon": "^3.0.1",
-    "vercel": "^34.0.0"
+    "nodemon": "^3.0.1"
   },
   "scripts": {
+    "dev": "nodemon api/predict.js",
     "start": "node api/predict.js",
-    "dev": "nodemon --exec 'vercel dev'",
     "deploy": "vercel",
     "test": "node test-local.js"
   },

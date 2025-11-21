@@ -1,14 +1,11 @@
 {
   "version": 2,
   "functions": {
-    "api/predict.js": {
+    "api/*.js": {
       "runtime": "nodejs18.x",
       "memory": 3000,
-      "maxDuration": 30
+      "maxDuration": 30,
+      "includeFiles": "models/**/*"
     }
-  },
-  "includeFiles": [
-    "models/**/*.keras",
-    "models/**/*.pkl"
-  ]
+  }
 }
