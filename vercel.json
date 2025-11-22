@@ -1,11 +1,66 @@
 {
   "version": 2,
+  "name": "trading-models-api",
+  "builds": [
+    {
+      "src": "api/**/*.js",
+      "use": "@vercel/node"
+    }
+  ],
   "functions": {
-    "api/*.js": {
+    "api/**/*.js": {
       "runtime": "nodejs18.x",
       "memory": 2048,
       "maxDuration": 30,
       "includeFiles": "models/**/*"
     }
-  }
+  },
+  "routes": [
+    {
+      "src": "/api/predict-crypto",
+      "dest": "/api/predict-crypto.js"
+    },
+    {
+      "src": "/api/predict-forex",
+      "dest": "/api/predict-forex.js"
+    },
+    {
+      "src": "/api/fetch-data",
+      "dest": "/api/data-orchestrator.js"
+    },
+    {
+      "src": "/api/get-predictions",
+      "dest": "/api/get-predictions.js"
+    },
+    {
+      "src": "/api/store-prediction",
+      "dest": "/api/store-prediction.js"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/public/$1"
+    }
+  ],
+  "env": {
+    "NODE_ENV": "production"
+  },
+  "headers": [
+    {
+      "source": "/api/(.*)",
+      "headers": [
+        {
+          "key": "Access-Control-Allow-Origin",
+          "value": "*"
+        },
+        {
+          "key": "Access-Control-Allow-Methods",
+          "value": "GET, POST, OPTIONS"
+        },
+        {
+          "key": "Access-Control-Allow-Headers",
+          "value": "Content-Type"
+        }
+      ]
+    }
+  ]
 }

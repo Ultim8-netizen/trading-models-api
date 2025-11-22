@@ -5,81 +5,273 @@ on:
     # Run every 4 hours (0, 4, 8, 12, 16, 20 UTC)
     - cron: '0 */4 * * *'
   
-  # Allow manual trigger
+  # Allow manual trigger for testing
   workflow_dispatch:
+    inputs:
+      test_mode:
+        description: 'Test with single symbol only'
+        required: false
+        default: 'false'
+
+env:
+  API_BASE_URL: ${{ secrets.VERCEL_URL || 'https://your-app.vercel.app' }}
 
 jobs:
-  predict:
+  # ============================================================================
+  # CRYPTO PREDICTIONS
+  # ============================================================================
+  predict-crypto:
+    name: Crypto Predictions
     runs-on: ubuntu-latest
+    
+    strategy:
+      max-parallel: 2  # Run 2 at a time to avoid rate limits
+      matrix:
+        symbol: [
+          'BTC/USDT',
+          'ETH/USDT',
+          'SOL/USDT',
+          'ETC/USDT',
+          'DOGE/USDT',
+          'ADA/USDT'
+        ]
     
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
       
-      - name: Run predictions for Crypto
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+      
+      - name: Fetch market data for ${{ matrix.symbol }}
+        id: fetch_data
         run: |
-          echo "🤖 Running crypto predictions..."
+          echo "🔄 Fetching real market data for ${{ matrix.symbol }}..."
           
-          # Example: BTC/USDT prediction
-          curl -X POST https://trading-models-api-xxx.vercel.app/api/predict \
+          # Fetch REAL data from your API
+          RESPONSE=$(curl -s -w "\n%{http_code}" \
+            "${{ env.API_BASE_URL }}/api/fetch-data?symbol=${{ matrix.symbol }}")
+          
+          # Split response and status code
+          HTTP_BODY=$(echo "$RESPONSE" | head -n -1)
+          HTTP_CODE=$(echo "$RESPONSE" | tail -n 1)
+          
+          # Check status code
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "❌ Data fetch failed with status $HTTP_CODE"
+            echo "$HTTP_BODY"
+            exit 1
+          fi
+          
+          # Save data to file
+          echo "$HTTP_BODY" > market_data.json
+          
+          # Validate data
+          DATA_POINTS=$(echo "$HTTP_BODY" | jq -r '.dataPoints // 0')
+          
+          if [ "$DATA_POINTS" -lt 50 ]; then
+            echo "❌ Insufficient data points: $DATA_POINTS"
+            exit 1
+          fi
+          
+          echo "✓ Fetched $DATA_POINTS data points"
+      
+      - name: Run prediction for ${{ matrix.symbol }}
+        id: predict
+        run: |
+          echo "🤖 Running prediction for ${{ matrix.symbol }}..."
+          
+          # Read fetched data
+          DATA=$(cat market_data.json | jq -c '.data')
+          
+          # Run prediction with REAL data
+          PREDICTION=$(curl -s -w "\n%{http_code}" \
+            -X POST "${{ env.API_BASE_URL }}/api/predict-crypto" \
             -H "Content-Type: application/json" \
-            -d '{
-              "asset_class": "crypto",
-              "symbol": "BTC/USDT",
-              "data": {
-                "1h_open": [40000],
-                "1h_high": [40500],
-                "1h_low": [39500],
-                "1h_close": [40250],
-                "1h_volume": [1000],
-                "4h_open": [40000],
-                "4h_high": [40500],
-                "4h_low": [39500],
-                "4h_close": [40250],
-                "4h_volume": [4000],
-                "1d_open": [40000],
-                "1d_high": [40500],
-                "1d_low": [39500],
-                "1d_close": [40250],
-                "1d_volume": [24000]
-              }
-            }'
+            -d "{\"symbol\": \"${{ matrix.symbol }}\", \"data\": $DATA}")
           
-          echo "✓ Crypto prediction complete"
+          # Split response and status code
+          PRED_BODY=$(echo "$PREDICTION" | head -n -1)
+          PRED_CODE=$(echo "$PREDICTION" | tail -n 1)
+          
+          if [ "$PRED_CODE" != "200" ]; then
+            echo "❌ Prediction failed with status $PRED_CODE"
+            echo "$PRED_BODY"
+            exit 1
+          fi
+          
+          # Parse results
+          CLASS=$(echo "$PRED_BODY" | jq -r '.class')
+          CONFIDENCE=$(echo "$PRED_BODY" | jq -r '.confidence')
+          STORED=$(echo "$PRED_BODY" | jq -r '.stored')
+          MODELS=$(echo "$PRED_BODY" | jq -r '.models_used')
+          TIME=$(echo "$PRED_BODY" | jq -r '.inference_time_ms')
+          
+          echo "✅ Prediction complete:"
+          echo "   Class: $CLASS"
+          echo "   Confidence: $CONFIDENCE"
+          echo "   Models: $MODELS"
+          echo "   Time: ${TIME}ms"
+          echo "   Stored: $STORED"
+          
+          # Set outputs for summary
+          echo "class=$CLASS" >> $GITHUB_OUTPUT
+          echo "confidence=$CONFIDENCE" >> $GITHUB_OUTPUT
+          echo "stored=$STORED" >> $GITHUB_OUTPUT
       
-      - name: Run predictions for Forex
+      - name: Cleanup
+        if: always()
+        run: rm -f market_data.json
+      
+      - name: Summary
+        if: always()
         run: |
-          echo "🤖 Running forex predictions..."
+          if [ "${{ steps.predict.outcome }}" == "success" ]; then
+            echo "### ✅ ${{ matrix.symbol }}" >> $GITHUB_STEP_SUMMARY
+            echo "- **Prediction**: ${{ steps.predict.outputs.class }}" >> $GITHUB_STEP_SUMMARY
+            echo "- **Confidence**: ${{ steps.predict.outputs.confidence }}" >> $GITHUB_STEP_SUMMARY
+            echo "- **Stored**: ${{ steps.predict.outputs.stored }}" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "### ❌ ${{ matrix.symbol }} - FAILED" >> $GITHUB_STEP_SUMMARY
+          fi
+
+  # ============================================================================
+  # FOREX PREDICTIONS
+  # ============================================================================
+  predict-forex:
+    name: Forex Predictions
+    runs-on: ubuntu-latest
+    
+    strategy:
+      max-parallel: 1  # Sequential to respect Twelve Data 800/day limit
+      matrix:
+        pair: [
+          'EURUSD',
+          'GBPJPY',
+          'USDJPY',
+          'GBPUSD',
+          'AUDUSD',
+          'USDCAD',
+          'USDCHF',
+          'EURAUD',
+          'NZDUSD'
+        ]
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+      
+      - name: Check Twelve Data quota
+        id: check_quota
+        run: |
+          echo "📊 Checking Twelve Data quota..."
           
-          # Example: EUR/USD prediction
-          curl -X POST https://trading-models-api-xxx.vercel.app/api/predict \
+          HEALTH=$(curl -s "${{ env.API_BASE_URL }}/api/fetch-data?health=true")
+          
+          REMAINING=$(echo "$HEALTH" | jq -r '.twelveDataRemaining // 0')
+          
+          echo "Remaining quota: $REMAINING"
+          
+          if [ "$REMAINING" -lt 10 ]; then
+            echo "⚠️ Low quota, skipping forex predictions"
+            echo "skip=true" >> $GITHUB_OUTPUT
+          else
+            echo "skip=false" >> $GITHUB_OUTPUT
+          fi
+      
+      - name: Fetch forex data for ${{ matrix.pair }}
+        if: steps.check_quota.outputs.skip != 'true'
+        id: fetch_data
+        run: |
+          echo "🔄 Fetching forex data for ${{ matrix.pair }}..."
+          
+          RESPONSE=$(curl -s -w "\n%{http_code}" \
+            "${{ env.API_BASE_URL }}/api/fetch-data?symbol=${{ matrix.pair }}")
+          
+          HTTP_BODY=$(echo "$RESPONSE" | head -n -1)
+          HTTP_CODE=$(echo "$RESPONSE" | tail -n 1)
+          
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "❌ Data fetch failed with status $HTTP_CODE"
+            exit 1
+          fi
+          
+          echo "$HTTP_BODY" > forex_data.json
+          
+          DATA_POINTS=$(echo "$HTTP_BODY" | jq -r '.dataPoints // 0')
+          echo "✓ Fetched $DATA_POINTS data points"
+      
+      - name: Run forex prediction for ${{ matrix.pair }}
+        if: steps.check_quota.outputs.skip != 'true'
+        id: predict
+        run: |
+          echo "🤖 Running forex prediction for ${{ matrix.pair }}..."
+          
+          DATA=$(cat forex_data.json | jq -c '.data')
+          
+          PREDICTION=$(curl -s -w "\n%{http_code}" \
+            -X POST "${{ env.API_BASE_URL }}/api/predict-forex" \
             -H "Content-Type: application/json" \
-            -d '{
-              "asset_class": "forex",
-              "symbol": "EUR/USD",
-              "data": {
-                "1h_open": [1.0900],
-                "1h_high": [1.0950],
-                "1h_low": [1.0850],
-                "1h_close": [1.0925],
-                "1h_volume": [500],
-                "4h_open": [1.0900],
-                "4h_high": [1.0950],
-                "4h_low": [1.0850],
-                "4h_close": [1.0925],
-                "4h_volume": [2000],
-                "1d_open": [1.0900],
-                "1d_high": [1.0950],
-                "1d_low": [1.0850],
-                "1d_close": [1.0925],
-                "1d_volume": [12000]
-              }
-            }'
+            -d "{\"pair\": \"${{ matrix.pair }}\", \"data\": $DATA}")
           
-          echo "✓ Forex prediction complete"
+          PRED_BODY=$(echo "$PREDICTION" | head -n -1)
+          PRED_CODE=$(echo "$PREDICTION" | tail -n 1)
+          
+          if [ "$PRED_CODE" != "200" ]; then
+            echo "❌ Prediction failed"
+            exit 1
+          fi
+          
+          CLASS=$(echo "$PRED_BODY" | jq -r '.class')
+          CONFIDENCE=$(echo "$PRED_BODY" | jq -r '.confidence')
+          
+          echo "✅ Prediction: $CLASS ($CONFIDENCE)"
+          
+          echo "class=$CLASS" >> $GITHUB_OUTPUT
+          echo "confidence=$CONFIDENCE" >> $GITHUB_OUTPUT
       
-      - name: Notification
-        if: success()
+      - name: Cleanup
+        if: always()
+        run: rm -f forex_data.json
+      
+      - name: Summary
+        if: always()
         run: |
-          echo "✅ All scheduled predictions completed"
-          echo "Results stored in MongoDB"
+          if [ "${{ steps.check_quota.outputs.skip }}" == "true" ]; then
+            echo "### ⚠️ ${{ matrix.pair }} - SKIPPED (Low Quota)" >> $GITHUB_STEP_SUMMARY
+          elif [ "${{ steps.predict.outcome }}" == "success" ]; then
+            echo "### ✅ ${{ matrix.pair }}" >> $GITHUB_STEP_SUMMARY
+            echo "- **Prediction**: ${{ steps.predict.outputs.class }}" >> $GITHUB_STEP_SUMMARY
+            echo "- **Confidence**: ${{ steps.predict.outputs.confidence }}" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "### ❌ ${{ matrix.pair }} - FAILED" >> $GITHUB_STEP_SUMMARY
+          fi
+
+  # ============================================================================
+  # FINAL SUMMARY
+  # ============================================================================
+  summary:
+    name: Prediction Summary
+    runs-on: ubuntu-latest
+    needs: [predict-crypto, predict-forex]
+    if: always()
+    
+    steps:
+      - name: Generate summary
+        run: |
+          echo "## 📊 Scheduled Predictions Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Time**: $(date -u '+%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Results" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Crypto: 6 symbols processed" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Forex: 9 pairs processed" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "🔍 **View results**: https://your-app.vercel.app" >> $GITHUB_STEP_SUMMARY

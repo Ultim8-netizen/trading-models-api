@@ -3,6 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Advanced ML Trading Predictions Dashboard">
+    <meta name="theme-color" content="#0f172a">
     <title>Trading ML Predictions Dashboard</title>
     <style>
         * {
@@ -11,419 +13,675 @@
             box-sizing: border-box;
         }
 
+        :root {
+            --primary: #667eea;
+            --primary-dark: #5568d3;
+            --secondary: #764ba2;
+            --accent: #f093fb;
+            --success: #10b981;
+            --danger: #ef4444;
+            --warning: #f59e0b;
+            --dark: #0f172a;
+            --darker: #0a0e27;
+            --gray-100: #f3f4f6;
+            --gray-200: #e5e7eb;
+            --gray-300: #d1d5db;
+            --gray-400: #9ca3af;
+            --gray-600: #4b5563;
+            --glass-bg: rgba(255, 255, 255, 0.05);
+            --glass-border: rgba(255, 255, 255, 0.1);
+        }
+
+        html {
+            scroll-behavior: smooth;
+        }
+
         body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, var(--dark) 0%, var(--darker) 100%);
+            color: #e5e7eb;
             min-height: 100vh;
-            padding: 20px;
+            padding: 16px;
+            overflow-x: hidden;
         }
 
         .container {
-            max-width: 1200px;
+            max-width: 1400px;
             margin: 0 auto;
         }
 
         header {
-            background: white;
-            padding: 20px;
-            border-radius: 10px;
-            margin-bottom: 20px;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            background: var(--glass-bg);
+            backdrop-filter: blur(10px);
+            border: 1px solid var(--glass-border);
+            padding: 32px;
+            border-radius: 16px;
+            margin-bottom: 32px;
+            animation: slideDown 0.5s ease-out;
+        }
+
+        @keyframes slideDown {
+            from { opacity: 0; transform: translateY(-20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .header-content {
+            display: flex;
+            justify-content: space-between;
+            align-items: start;
+            gap: 20px;
+            flex-wrap: wrap;
+        }
+
+        .header-title {
+            flex: 1;
+            min-width: 300px;
         }
 
         h1 {
-            color: #333;
-            margin-bottom: 10px;
+            font-size: 32px;
+            font-weight: 700;
+            background: linear-gradient(135deg, #667eea, #f093fb);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 8px;
+            letter-spacing: -0.5px;
         }
 
-        .stats {
+        .subtitle {
+            color: var(--gray-400);
+            font-size: 14px;
+            margin-bottom: 20px;
+        }
+
+        .stats-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 15px;
-            margin-top: 15px;
+            grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+            gap: 12px;
+            margin-top: 20px;
         }
 
         .stat-card {
-            background: #f5f5f5;
-            padding: 15px;
-            border-radius: 8px;
-            border-left: 4px solid #667eea;
+            background: linear-gradient(135deg, rgba(102, 126, 234, 0.1), rgba(240, 147, 251, 0.1));
+            border: 1px solid var(--glass-border);
+            padding: 16px;
+            border-radius: 12px;
+            transition: all 0.3s ease;
+        }
+
+        .stat-card:hover {
+            background: linear-gradient(135deg, rgba(102, 126, 234, 0.15), rgba(240, 147, 251, 0.15));
+            border-color: var(--primary);
+            transform: translateY(-2px);
         }
 
         .stat-label {
-            font-size: 12px;
-            color: #999;
+            font-size: 11px;
+            color: var(--gray-400);
             text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 6px;
         }
 
         .stat-value {
             font-size: 24px;
-            font-weight: bold;
-            color: #333;
+            font-weight: 700;
+            color: #fff;
+            font-variant-numeric: tabular-nums;
         }
 
-        .filters {
-            background: white;
+        .stat-unit {
+            font-size: 12px;
+            color: var(--gray-400);
+            margin-left: 4px;
+        }
+
+        .filters-section {
+            background: var(--glass-bg);
+            backdrop-filter: blur(10px);
+            border: 1px solid var(--glass-border);
             padding: 20px;
-            border-radius: 10px;
-            margin-bottom: 20px;
+            border-radius: 16px;
+            margin-bottom: 24px;
+            animation: slideUp 0.5s ease-out;
+        }
+
+        @keyframes slideUp {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .filters-content {
             display: flex;
-            gap: 10px;
+            gap: 12px;
             flex-wrap: wrap;
+            align-items: center;
+        }
+
+        button, select, input {
+            padding: 10px 16px;
+            border: 1px solid var(--glass-border);
+            background: linear-gradient(135deg, rgba(102, 126, 234, 0.1), transparent);
+            color: #e5e7eb;
+            border-radius: 8px;
+            font-size: 13px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            backdrop-filter: blur(10px);
         }
 
         button {
-            background: #667eea;
-            color: white;
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
             border: none;
-            padding: 10px 20px;
-            border-radius: 5px;
-            cursor: pointer;
-            font-size: 14px;
+            color: white;
+            font-weight: 600;
+            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
         }
 
         button:hover {
-            background: #764ba2;
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
         }
 
-        button.active {
-            background: #764ba2;
+        button:active {
+            transform: translateY(0);
         }
 
-        select, input {
-            padding: 10px;
-            border: 1px solid #ddd;
-            border-radius: 5px;
-            font-size: 14px;
+        button.filter-btn {
+            background: var(--glass-bg);
+            border: 1px solid var(--glass-border);
+            color: var(--gray-400);
         }
 
-        .predictions-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
-            gap: 20px;
+        button.filter-btn.active {
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            border: none;
+            color: white;
+            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
+        }
+
+        input, select {
+            border: 1px solid var(--glass-border);
+            padding: 10px 14px;
+            color: #e5e7eb;
+        }
+
+        input::placeholder {
+            color: var(--gray-400);
+        }
+
+        input:focus, select:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+
+        .filter-separator {
+            width: 1px;
+            height: 24px;
+            background: var(--glass-border);
+            margin: 0 8px;
+        }
+
+        .error-box {
+            background: linear-gradient(135deg, rgba(239, 68, 68, 0.1), transparent);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+            color: #fca5a5;
+            padding: 16px;
+            border-radius: 12px;
+            margin-bottom: 20px;
+            display: none;
+            animation: shake 0.5s ease-out;
+        }
+
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            25% { transform: translateX(-5px); }
+            75% { transform: translateX(5px); }
+        }
+
+        .error-box.show {
+            display: block;
+        }
+
+        .loading-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 60px 20px;
+            text-align: center;
+        }
+
+        .spinner {
+            width: 48px;
+            height: 48px;
+            border: 3px solid var(--glass-border);
+            border-top-color: var(--primary);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
             margin-bottom: 20px;
         }
 
-        .prediction-card {
-            background: white;
-            padding: 20px;
-            border-radius: 10px;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-            border-top: 4px solid #667eea;
+        @keyframes spin {
+            to { transform: rotate(360deg); }
         }
 
-        .prediction-header {
+        .loading-text {
+            color: var(--gray-400);
+            font-size: 14px;
+        }
+
+        .predictions-container {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+            gap: 16px;
+            margin-bottom: 32px;
+            animation: fadeIn 0.3s ease-out;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        .prediction-card {
+            background: var(--glass-bg);
+            backdrop-filter: blur(10px);
+            border: 1px solid var(--glass-border);
+            border-radius: 12px;
+            padding: 20px;
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .prediction-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 3px;
+            background: linear-gradient(90deg, var(--primary), var(--secondary));
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+
+        .prediction-card:hover {
+            transform: translateY(-4px);
+            border-color: var(--primary);
+            box-shadow: 0 12px 24px rgba(102, 126, 234, 0.15);
+        }
+
+        .prediction-card:hover::before {
+            opacity: 1;
+        }
+
+        .card-header {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-bottom: 15px;
-            border-bottom: 1px solid #eee;
-            padding-bottom: 10px;
+            margin-bottom: 16px;
+            padding-bottom: 12px;
+            border-bottom: 1px solid var(--glass-border);
+        }
+
+        .symbol-info {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
         }
 
         .symbol {
             font-size: 18px;
-            font-weight: bold;
-            color: #333;
+            font-weight: 700;
+            color: #fff;
         }
 
-        .asset-class {
-            font-size: 12px;
-            background: #f0f0f0;
+        .asset-type {
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
             padding: 4px 8px;
+            background: rgba(102, 126, 234, 0.2);
             border-radius: 4px;
-            color: #666;
+            width: fit-content;
+            color: var(--primary);
+        }
+
+        .prediction-badge {
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .prediction-badge.up {
+            background: rgba(16, 185, 129, 0.2);
+            color: #6ee7b7;
+            border: 1px solid rgba(16, 185, 129, 0.3);
+        }
+
+        .prediction-badge.down {
+            background: rgba(239, 68, 68, 0.2);
+            color: #fca5a5;
+            border: 1px solid rgba(239, 68, 68, 0.3);
+        }
+
+        .prediction-badge.neutral {
+            background: rgba(245, 158, 11, 0.2);
+            color: #fcd34d;
+            border: 1px solid rgba(245, 158, 11, 0.3);
         }
 
         .prediction-result {
-            font-size: 32px;
-            font-weight: bold;
+            font-size: 36px;
+            font-weight: 700;
             text-align: center;
-            padding: 15px;
-            border-radius: 8px;
-            margin: 15px 0;
+            padding: 20px;
+            margin: 16px 0;
+            border-radius: 10px;
+            background: linear-gradient(135deg, rgba(102, 126, 234, 0.1), rgba(240, 147, 251, 0.1));
+            border: 1px solid var(--glass-border);
         }
 
-        .prediction-result.up {
-            background: #d4edda;
-            color: #155724;
+        .confidence-section {
+            margin: 16px 0;
         }
 
-        .prediction-result.down {
-            background: #f8d7da;
-            color: #721c24;
-        }
-
-        .prediction-result.neutral {
-            background: #fff3cd;
-            color: #856404;
+        .confidence-label {
+            font-size: 12px;
+            color: var(--gray-400);
+            margin-bottom: 8px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
         }
 
         .confidence-bar {
             width: 100%;
-            height: 20px;
-            background: #e9ecef;
-            border-radius: 10px;
+            height: 24px;
+            background: var(--glass-bg);
+            border: 1px solid var(--glass-border);
+            border-radius: 12px;
             overflow: hidden;
-            margin: 10px 0;
+            position: relative;
         }
 
         .confidence-fill {
             height: 100%;
-            background: linear-gradient(90deg, #667eea, #764ba2);
-            transition: width 0.3s ease;
+            background: linear-gradient(90deg, var(--primary), var(--secondary));
+            transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .confidence-percent {
+            font-size: 11px;
+            font-weight: 700;
+            color: white;
+            text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+            margin-left: 4px;
         }
 
         .probabilities {
             display: grid;
             grid-template-columns: 1fr 1fr 1fr;
-            gap: 10px;
-            margin-top: 15px;
-            font-size: 12px;
+            gap: 8px;
+            margin: 16px 0;
         }
 
         .prob-item {
             text-align: center;
             padding: 10px;
-            background: #f5f5f5;
-            border-radius: 5px;
+            background: var(--glass-bg);
+            border: 1px solid var(--glass-border);
+            border-radius: 8px;
+            transition: all 0.2s ease;
+        }
+
+        .prob-item:hover {
+            border-color: var(--primary);
+            background: rgba(102, 126, 234, 0.1);
         }
 
         .prob-label {
-            color: #999;
-            margin-bottom: 5px;
+            font-size: 10px;
+            color: var(--gray-400);
+            margin-bottom: 4px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
         }
 
         .prob-value {
-            font-weight: bold;
+            font-weight: 700;
             font-size: 16px;
-            color: #333;
+            color: #fff;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .card-footer {
+            font-size: 11px;
+            color: var(--gray-400);
+            margin-top: 12px;
+            padding-top: 12px;
+            border-top: 1px solid var(--glass-border);
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+        }
+
+        .footer-item {
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .footer-label {
+            color: var(--gray-500);
         }
 
         .timestamp {
-            font-size: 12px;
-            color: #999;
-            margin-top: 10px;
+            grid-column: 1 / -1;
+            color: var(--gray-500);
+            font-size: 10px;
         }
 
-        .loading {
-            text-align: center;
-            padding: 40px;
-            background: white;
-            border-radius: 10px;
-            color: #666;
-        }
-
-        .error {
-            background: #f8d7da;
-            color: #721c24;
-            padding: 15px;
-            border-radius: 5px;
-            margin-bottom: 20px;
-        }
-
-        .pagination {
+        .pagination-section {
             display: flex;
             justify-content: center;
-            gap: 10px;
-            margin-top: 20px;
+            align-items: center;
+            gap: 16px;
+            margin-top: 32px;
+            padding: 20px;
+        }
+
+        .pagination-info {
+            font-size: 12px;
+            color: var(--gray-400);
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: var(--gray-400);
+        }
+
+        .empty-state-icon {
+            font-size: 48px;
+            margin-bottom: 16px;
+        }
+
+        @media (max-width: 768px) {
+            header {
+                padding: 20px;
+            }
+
+            h1 {
+                font-size: 24px;
+            }
+
+            .header-content {
+                flex-direction: column;
+            }
+
+            .predictions-container {
+                grid-template-columns: 1fr;
+            }
+
+            .stats-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+
+            .filters-content {
+                flex-direction: column;
+                width: 100%;
+            }
+
+            button, select, input {
+                width: 100%;
+            }
+
+            .filter-separator {
+                display: none;
+            }
+        }
+
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.7);
+            backdrop-filter: blur(4px);
+            z-index: 1000;
+            animation: fadeIn 0.2s ease-out;
+        }
+
+        .modal-overlay.show {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal {
+            background: linear-gradient(135deg, var(--dark), var(--darker));
+            border: 1px solid var(--glass-border);
+            border-radius: 16px;
+            padding: 32px;
+            max-width: 500px;
+            width: 90%;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+        }
+
+        .modal-title {
+            font-size: 20px;
+            font-weight: 700;
+            margin-bottom: 16px;
+            color: #fff;
+        }
+
+        .modal-content {
+            color: var(--gray-400);
+            margin-bottom: 20px;
+            line-height: 1.6;
+        }
+
+        .modal-actions {
+            display: flex;
+            gap: 12px;
+            justify-content: flex-end;
         }
     </style>
 </head>
 <body>
     <div class="container">
+        <!-- Header -->
         <header>
-            <h1>🤖 Trading ML Predictions Dashboard</h1>
-            <p>Real-time predictions from trained neural networks</p>
-            <div class="stats">
-                <div class="stat-card">
-                    <div class="stat-label">Total Predictions</div>
-                    <div class="stat-value" id="totalCount">-</div>
+            <div class="header-content">
+                <div class="header-title">
+                    <h1>⚡ Trading ML Predictions</h1>
+                    <p class="subtitle">Real-time ensemble predictions from advanced neural networks</p>
                 </div>
-                <div class="stat-card">
-                    <div class="stat-label">Last Update</div>
-                    <div class="stat-value" id="lastUpdate" style="font-size: 14px;">-</div>
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-label">Total Predictions</div>
+                        <div class="stat-value" id="totalCount">-</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">Avg Confidence</div>
+                        <div class="stat-value" id="avgConfidence">-</div>
+                        <div class="stat-unit">%</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">Last Update</div>
+                        <div class="stat-value" id="lastUpdate" style="font-size: 12px; margin-top: 4px;">-</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">Health Status</div>
+                        <div class="stat-value" id="healthStatus" style="font-size: 12px; margin-top: 4px;">✓ Healthy</div>
+                    </div>
                 </div>
             </div>
         </header>
 
-        <div class="filters">
-            <button id="filterAll" class="active">All Assets</button>
-            <button id="filterCrypto">🪙 Crypto</button>
-            <button id="filterForex">💱 Forex</button>
-            <input type="number" id="limitInput" placeholder="Limit" value="20" min="1" max="100">
-            <button id="refreshBtn">🔄 Refresh</button>
+        <!-- Error Box -->
+        <div class="error-box" id="errorBox"></div>
+
+        <!-- Filters -->
+        <div class="filters-section">
+            <div class="filters-content">
+                <button class="filter-btn active" id="filterAll">📊 All Assets</button>
+                <button class="filter-btn" id="filterCrypto">🪙 Crypto</button>
+                <button class="filter-btn" id="filterForex">💱 Forex</button>
+                <div class="filter-separator"></div>
+                <select id="limitInput">
+                    <option value="10">10 Results</option>
+                    <option value="20" selected>20 Results</option>
+                    <option value="50">50 Results</option>
+                    <option value="100">100 Results</option>
+                </select>
+                <select id="sortInput">
+                    <option value="-timestamp" selected>Newest First</option>
+                    <option value="timestamp">Oldest First</option>
+                    <option value="-confidence">Highest Confidence</option>
+                    <option value="confidence">Lowest Confidence</option>
+                </select>
+                <div class="filter-separator"></div>
+                <button id="refreshBtn">🔄 Refresh</button>
+                <button id="statsBtn">📈 View Stats</button>
+            </div>
         </div>
 
-        <div id="error" class="error" style="display: none;"></div>
+        <!-- Predictions -->
+        <div id="predictionsContainer" class="predictions-container"></div>
 
-        <div id="loading" class="loading" style="display: none;">
-            ⏳ Loading predictions...
-        </div>
-
-        <div id="predictionsContainer" class="predictions-grid"></div>
-
-        <div class="pagination">
+        <!-- Pagination -->
+        <div class="pagination-section">
             <button id="prevBtn">← Previous</button>
+            <div class="pagination-info">
+                Page <span id="currentPage">1</span> | <span id="pageInfo">-</span>
+            </div>
             <button id="nextBtn">Next →</button>
         </div>
     </div>
 
-    <script>
-        const API_BASE = 'https://trading-models-api-xxx.vercel.app'; // Replace with your URL
-        let currentOffset = 0;
-        let currentAssetClass = null;
-        let currentLimit = 20;
+    <div class="modal-overlay" id="modalOverlay">
+        <div class="modal">
+            <div class="modal-title" id="modalTitle"></div>
+            <div class="modal-content" id="modalContent"></div>
+            <div class="modal-actions">
+                <button id="modalCloseBtn">Close</button>
+            </div>
+        </div>
+    </div>
 
-        // Filter buttons
-        document.getElementById('filterAll').addEventListener('click', () => {
-            currentAssetClass = null;
-            currentOffset = 0;
-            updateFilterButtons();
-            fetchPredictions();
-        });
-
-        document.getElementById('filterCrypto').addEventListener('click', () => {
-            currentAssetClass = 'crypto';
-            currentOffset = 0;
-            updateFilterButtons();
-            fetchPredictions();
-        });
-
-        document.getElementById('filterForex').addEventListener('click', () => {
-            currentAssetClass = 'forex';
-            currentOffset = 0;
-            updateFilterButtons();
-            fetchPredictions();
-        });
-
-        document.getElementById('refreshBtn').addEventListener('click', () => {
-            currentOffset = 0;
-            fetchPredictions();
-        });
-
-        document.getElementById('limitInput').addEventListener('change', (e) => {
-            currentLimit = parseInt(e.target.value) || 20;
-            currentOffset = 0;
-            fetchPredictions();
-        });
-
-        document.getElementById('prevBtn').addEventListener('click', () => {
-            if (currentOffset > 0) {
-                currentOffset -= currentLimit;
-                fetchPredictions();
-            }
-        });
-
-        document.getElementById('nextBtn').addEventListener('click', () => {
-            currentOffset += currentLimit;
-            fetchPredictions();
-        });
-
-        function updateFilterButtons() {
-            document.querySelectorAll('.filters button').forEach(btn => {
-                btn.classList.remove('active');
-            });
-            
-            if (!currentAssetClass) {
-                document.getElementById('filterAll').classList.add('active');
-            } else if (currentAssetClass === 'crypto') {
-                document.getElementById('filterCrypto').classList.add('active');
-            } else if (currentAssetClass === 'forex') {
-                document.getElementById('filterForex').classList.add('active');
-            }
-        }
-
-        async function fetchPredictions() {
-            const loading = document.getElementById('loading');
-            const error = document.getElementById('error');
-            const container = document.getElementById('predictionsContainer');
-
-            loading.style.display = 'block';
-            error.style.display = 'none';
-
-            try {
-                let url = `${API_BASE}/api/get-predictions?limit=${currentLimit}&offset=${currentOffset}`;
-                if (currentAssetClass) {
-                    url += `&asset_class=${currentAssetClass}`;
-                }
-
-                const response = await fetch(url);
-                const data = await response.json();
-
-                if (!data.success) {
-                    throw new Error(data.error || 'Failed to fetch predictions');
-                }
-
-                // Update stats
-                document.getElementById('totalCount').textContent = data.total_count.toLocaleString();
-                if (data.last_update) {
-                    const date = new Date(data.last_update);
-                    document.getElementById('lastUpdate').textContent = date.toLocaleString();
-                }
-
-                // Render predictions
-                container.innerHTML = data.data.map(pred => `
-                    <div class="prediction-card">
-                        <div class="prediction-header">
-                            <span class="symbol">${pred.symbol}</span>
-                            <span class="asset-class">${pred.asset_class.toUpperCase()}</span>
-                        </div>
-                        
-                        <div class="prediction-result ${pred.class.toLowerCase()}">
-                            ${pred.class}
-                        </div>
-                        
-                        <div style="font-size: 12px; color: #666; text-align: center;">
-                            Confidence
-                        </div>
-                        <div class="confidence-bar">
-                            <div class="confidence-fill" style="width: ${pred.confidence * 100}%"></div>
-                        </div>
-                        <div style="text-align: center; font-size: 12px; color: #999;">
-                            ${(pred.confidence * 100).toFixed(1)}%
-                        </div>
-                        
-                        <div class="probabilities">
-                            <div class="prob-item">
-                                <div class="prob-label">📉 DOWN</div>
-                                <div class="prob-value">${(pred.probabilities.down * 100).toFixed(1)}%</div>
-                            </div>
-                            <div class="prob-item">
-                                <div class="prob-label">〰️ NEUTRAL</div>
-                                <div class="prob-value">${(pred.probabilities.neutral * 100).toFixed(1)}%</div>
-                            </div>
-                            <div class="prob-item">
-                                <div class="prob-label">📈 UP</div>
-                                <div class="prob-value">${(pred.probabilities.up * 100).toFixed(1)}%</div>
-                            </div>
-                        </div>
-                        
-                        <div style="font-size: 11px; color: #999; margin-top: 10px;">
-                            Models: ${pred.models_used} | Inference: ${pred.inference_time_ms}ms
-                        </div>
-                        
-                        <div class="timestamp">
-                            ${new Date(pred.timestamp).toLocaleString()}
-                        </div>
-                    </div>
-                `).join('');
-
-                if (data.data.length === 0) {
-                    container.innerHTML = '<div class="loading">No predictions found</div>';
-                }
-
-            } catch (err) {
-                error.style.display = 'block';
-                error.textContent = `❌ Error: ${err.message}`;
-                container.innerHTML = '';
-            } finally {
-                loading.style.display = 'none';
-            }
-        }
-
-        // Initial load
-        fetchPredictions();
-    </script>
+    <script src="dashboard.js"></script>
 </body>
 </html>
