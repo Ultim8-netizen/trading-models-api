@@ -20,7 +20,7 @@
  * All models expect: 40-50 features (normalized, no missing values)
  */
 
-const tf = require('@tensorflow/tfjs-node');
+const tf = require('@tensorflow/tfjs');
 const path = require('path');
 const fs = require('fs');
 const CryptoFeatureEngineer = require('../utils/crypto-features');

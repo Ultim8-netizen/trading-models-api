@@ -19,7 +19,7 @@
  * All models expect: ~40 features (conservative, backward-looking)
  */
 
-const tf = require('@tensorflow/tfjs-node');
+const tf = require('@tensorflow/tfjs');
 const path = require('path');
 const fs = require('fs');
 const ConservativeFeatureEngineer = require('../utils/forex-features');

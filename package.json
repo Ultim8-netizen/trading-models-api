@@ -16,7 +16,7 @@
     "health": "node test/health-check.js"
   },
   "dependencies": {
-    "@tensorflow/tfjs-node": "^4.22.0",
+    "@tensorflow/tfjs": "^4.22.0",
     "axios": "^1.6.2",
     "mongodb": "^7.0.0",
     "dotenv": "^16.3.1"
