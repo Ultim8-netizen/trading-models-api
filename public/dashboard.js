@@ -1,6 +1,6 @@
 // Dashboard Configuration
 const CONFIG = {
-    API_BASE: 'http://localhost:3000', // Change to your Vercel URL
+    API_BASE: 'https://trading-models.vercel.app', // Change to your Vercel URL
     REFRESH_INTERVAL: 60000, // Auto-refresh every 60 seconds
     CACHE_DURATION: 30000    // Cache API responses for 30 seconds
 };
