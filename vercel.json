@@ -1,64 +1,62 @@
 {
   "version": 2,
   "name": "trading-models-api",
-  "builds": [
-    {
-      "src": "api/**/*.js",
-      "use": "@vercel/node"
-    }
-  ],
   "functions": {
     "api/**/*.js": {
-      "runtime": "nodejs18.x",
       "memory": 2048,
-      "maxDuration": 30,
-      "includeFiles": "models/**/*"
+      "maxDuration": 30
     }
   },
   "routes": [
     {
       "src": "/api/predict-crypto",
-      "dest": "/api/predict-crypto.js"
+      "dest": "/api/predict-crypto.js",
+      "methods": ["GET", "POST", "OPTIONS"]
     },
     {
       "src": "/api/predict-forex",
-      "dest": "/api/predict-forex.js"
+      "dest": "/api/predict-forex.js",
+      "methods": ["GET", "POST", "OPTIONS"]
     },
     {
       "src": "/api/fetch-data",
-      "dest": "/api/data-orchestrator.js"
+      "dest": "/api/data-orchestrator.js",
+      "methods": ["GET", "POST", "OPTIONS"]
     },
     {
       "src": "/api/get-predictions",
-      "dest": "/api/get-predictions.js"
+      "dest": "/api/get-predictions.js",
+      "methods": ["GET", "POST", "OPTIONS"]
     },
     {
       "src": "/api/store-prediction",
-      "dest": "/api/store-prediction.js"
+      "dest": "/api/store-prediction.js",
+      "methods": ["GET", "POST", "OPTIONS"]
     },
     {
       "src": "/(.*)",
       "dest": "/public/$1"
     }
   ],
-  "env": {
-    "NODE_ENV": "production"
-  },
   "headers": [
     {
       "source": "/api/(.*)",
       "headers": [
+        {
+          "key": "Access-Control-Allow-Credentials",
+          "value": "true"
+        },
         {
           "key": "Access-Control-Allow-Origin",
           "value": "*"
         },
         {
           "key": "Access-Control-Allow-Methods",
-          "value": "GET, POST, OPTIONS"
+          "value": "GET,POST,OPTIONS"
         },
         {
           "key": "Access-Control-Allow-Headers",
-          "value": "Content-Type"
+          "value": "X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version"
         }
       ]
     }
