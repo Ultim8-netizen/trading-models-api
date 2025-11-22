@@ -4,7 +4,7 @@
   "description": "Trading ML models API - Crypto & Forex predictions with 56-60% accuracy",
   "main": "api/predict-crypto.js",
   "engines": {
-    "node": "18.x"
+    "node": "22.x"
   },
   "scripts": {
     "dev": "vercel dev",
