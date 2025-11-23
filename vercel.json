@@ -1,6 +1,11 @@
 {
   "version": 2,
   "name": "trading-models-api",
+  "buildCommand": "npm install",
+  "outputDirectory": "./",
+  "includeFiles": [
+    "models/**"
+  ],
   "functions": {
     "api/**/*.js": {
       "memory": 1024,
