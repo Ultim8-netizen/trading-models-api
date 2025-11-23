@@ -27,6 +27,7 @@
             --gray-200: #e5e7eb;
             --gray-300: #d1d5db;
             --gray-400: #9ca3af;
+            --gray-500: #6b7280;
             --gray-600: #4b5563;
             --glass-bg: rgba(255, 255, 255, 0.05);
             --glass-border: rgba(255, 255, 255, 0.1);
@@ -180,19 +181,25 @@
             box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
         }
 
-        button:hover {
+        button:hover:not(:disabled) {
             transform: translateY(-2px);
             box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
         }
 
-        button:active {
+        button:active:not(:disabled) {
             transform: translateY(0);
+        }
+
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
         }
 
         button.filter-btn {
             background: var(--glass-bg);
             border: 1px solid var(--glass-border);
             color: var(--gray-400);
+            box-shadow: none;
         }
 
         button.filter-btn.active {
@@ -225,6 +232,7 @@
             margin: 0 8px;
         }
 
+        /* FIXED: Error box now displays properly */
         .error-box {
             background: linear-gradient(135deg, rgba(239, 68, 68, 0.1), transparent);
             border: 1px solid rgba(239, 68, 68, 0.3);
@@ -234,6 +242,8 @@
             margin-bottom: 20px;
             display: none;
             animation: shake 0.5s ease-out;
+            opacity: 0;
+            transition: opacity 0.3s ease;
         }
 
         @keyframes shake {
@@ -244,6 +254,39 @@
 
         .error-box.show {
             display: block;
+            opacity: 1;
+        }
+
+        /* FIXED: Network status indicator */
+        .network-status {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: var(--glass-bg);
+            backdrop-filter: blur(10px);
+            border: 1px solid var(--glass-border);
+            padding: 12px 20px;
+            border-radius: 8px;
+            font-size: 12px;
+            display: none;
+            align-items: center;
+            gap: 8px;
+            z-index: 999;
+            animation: slideUp 0.3s ease;
+        }
+
+        .network-status.show {
+            display: flex;
+        }
+
+        .network-status.offline {
+            border-color: var(--danger);
+            background: rgba(239, 68, 68, 0.1);
+        }
+
+        .network-status.online {
+            border-color: var(--success);
+            background: rgba(16, 185, 129, 0.1);
         }
 
         .loading-container {
@@ -253,6 +296,7 @@
             justify-content: center;
             padding: 60px 20px;
             text-align: center;
+            min-height: 400px;
         }
 
         .spinner {
@@ -274,11 +318,41 @@
             font-size: 14px;
         }
 
+        /* FIXED: Skeleton loader for cards */
+        .skeleton-card {
+            background: var(--glass-bg);
+            border: 1px solid var(--glass-border);
+            border-radius: 12px;
+            padding: 20px;
+            animation: pulse 1.5s ease-in-out infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .skeleton-line {
+            height: 12px;
+            background: var(--glass-border);
+            border-radius: 4px;
+            margin-bottom: 12px;
+        }
+
+        .skeleton-line.short {
+            width: 60%;
+        }
+
+        .skeleton-line.long {
+            width: 100%;
+        }
+
         .predictions-container {
             display: grid;
             grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
             gap: 16px;
             margin-bottom: 32px;
+            min-height: 200px;
             animation: fadeIn 0.3s ease-out;
         }
 
@@ -286,7 +360,6 @@
             from { opacity: 0; }
             to { opacity: 1; }
         }
-
         .prediction-card {
             background: var(--glass-bg);
             backdrop-filter: blur(10px);
@@ -377,17 +450,6 @@
             background: rgba(245, 158, 11, 0.2);
             color: #fcd34d;
             border: 1px solid rgba(245, 158, 11, 0.3);
-        }
-
-        .prediction-result {
-            font-size: 36px;
-            font-weight: 700;
-            text-align: center;
-            padding: 20px;
-            margin: 16px 0;
-            border-radius: 10px;
-            background: linear-gradient(135deg, rgba(102, 126, 234, 0.1), rgba(240, 147, 251, 0.1));
-            border: 1px solid var(--glass-border);
         }
 
         .confidence-section {
@@ -516,41 +578,6 @@
             margin-bottom: 16px;
         }
 
-        @media (max-width: 768px) {
-            header {
-                padding: 20px;
-            }
-
-            h1 {
-                font-size: 24px;
-            }
-
-            .header-content {
-                flex-direction: column;
-            }
-
-            .predictions-container {
-                grid-template-columns: 1fr;
-            }
-
-            .stats-grid {
-                grid-template-columns: repeat(2, 1fr);
-            }
-
-            .filters-content {
-                flex-direction: column;
-                width: 100%;
-            }
-
-            button, select, input {
-                width: 100%;
-            }
-
-            .filter-separator {
-                display: none;
-            }
-        }
-
         .modal-overlay {
             display: none;
             position: fixed;
@@ -598,11 +625,45 @@
             gap: 12px;
             justify-content: flex-end;
         }
+
+        @media (max-width: 768px) {
+            header {
+                padding: 20px;
+            }
+
+            h1 {
+                font-size: 24px;
+            }
+
+            .header-content {
+                flex-direction: column;
+            }
+
+            .predictions-container {
+                grid-template-columns: 1fr;
+            }
+
+            .stats-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+
+            .filters-content {
+                flex-direction: column;
+                width: 100%;
+            }
+
+            button, select, input {
+                width: 100%;
+            }
+
+            .filter-separator {
+                display: none;
+            }
+        }
     </style>
 </head>
 <body>
     <div class="container">
-        <!-- Header -->
         <header>
             <div class="header-content">
                 <div class="header-title">
@@ -625,16 +686,14 @@
                     </div>
                     <div class="stat-card">
                         <div class="stat-label">Health Status</div>
-                        <div class="stat-value" id="healthStatus" style="font-size: 12px; margin-top: 4px;">✓ Healthy</div>
+                        <div class="stat-value" id="healthStatus" style="font-size: 12px; margin-top: 4px;">⏳ Checking</div>
                     </div>
                 </div>
             </div>
         </header>
 
-        <!-- Error Box -->
         <div class="error-box" id="errorBox"></div>
 
-        <!-- Filters -->
         <div class="filters-section">
             <div class="filters-content">
                 <button class="filter-btn active" id="filterAll">📊 All Assets</button>
@@ -659,10 +718,8 @@
             </div>
         </div>
 
-        <!-- Predictions -->
         <div id="predictionsContainer" class="predictions-container"></div>
 
-        <!-- Pagination -->
         <div class="pagination-section">
             <button id="prevBtn">← Previous</button>
             <div class="pagination-info">
@@ -670,6 +727,11 @@
             </div>
             <button id="nextBtn">Next →</button>
         </div>
+    </div>
+
+    <div class="network-status" id="networkStatus">
+        <span id="networkStatusIcon">🔴</span>
+        <span id="networkStatusText">Checking connection...</span>
     </div>
 
     <div class="modal-overlay" id="modalOverlay">
