@@ -1,6 +1,6 @@
 // Dashboard Configuration
 const CONFIG = {
-    API_BASE: 'https://trading-models.vercel.app', // Change to your Vercel URL
+    API_BASE: 'https://trading-models.vercel.app', // actual vercel url. although i'm not sure if i should leave it with the trailing slash or not
     REFRESH_INTERVAL: 60000, // Auto-refresh every 60 seconds
     CACHE_DURATION: 30000    // Cache API responses for 30 seconds
 };

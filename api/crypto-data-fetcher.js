@@ -73,6 +73,7 @@ const CONFIG = {
 
 /**
  * Fetch candles from Binance
+ * FIXED: Added headers to bypass geo-blocking (Status 451)
  * Binance free tier: NO RATE LIMITS for standard endpoints
  * 
  * @param {String} symbol - Trading pair (e.g., 'BTCUSDT')
@@ -90,11 +91,15 @@ async function fetchBinanceCandles(symbol, interval, limit = 168) {
         interval: CONFIG.INTERVALS[interval],
         limit: Math.min(limit, 1000)
       },
-      timeout: CONFIG.REQUEST_TIMEOUT_MS
+      timeout: CONFIG.REQUEST_TIMEOUT_MS,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'Accept': 'application/json'
+      }
     });
     
     if (!Array.isArray(response.data) || response.data.length === 0) {
-      throw new Error('Empty response');
+      throw new Error('Empty response from Binance');
     }
     
     // Transform Binance format
@@ -188,13 +193,13 @@ async function fetchCryptoDataBinance(pair) {
     };
   }
 }
-
 // ============================================================================
 // COINGECKO FETCHER (FALLBACK - 10-50 CALLS/MIN, NO API KEY)
 // ============================================================================
 
 /**
  * Fetch market data from CoinGecko
+ * FIXED: Added validation for response structure and better error handling
  * Free tier: 10-50 calls/min (extremely generous, NO API KEY REQUIRED)
  * 
  * @param {String} coinId - CoinGecko coin ID
@@ -216,25 +221,39 @@ async function fetchCoinGeckoMarketData(coinId) {
         timeout: CONFIG.REQUEST_TIMEOUT_MS
       }
     );
-    
-    if (!response.data.prices || response.data.prices.length === 0) {
+
+    // Validate response structure
+    if (!response.data) {
+      throw new Error('Empty response from CoinGecko');
+    }
+
+    const { prices, market_caps, volumes } = response.data;
+
+    if (!prices || !Array.isArray(prices) || prices.length === 0) {
       throw new Error('No price data from CoinGecko');
     }
-    
-    const { prices, market_caps, volumes } = response.data;
-    
+
     // Transform to candles (CoinGecko gives prices, approximate OHLC)
-    const candles = prices.map((price, i) => ({
-      timestamp: price[0],
-      // Use closing price as representative
-      // In real scenario: could use more sophisticated approximation
-      open: price[1],
-      high: price[1] * (1 + Math.random() * 0.02),
-      low: price[1] * (1 - Math.random() * 0.02),
-      close: price[1],
-      volume: volumes[i]?.[1] || 0
-    }));
-    
+    const candles = prices.map((price, i) => {
+      if (!Array.isArray(price) || price.length < 2) {
+        return null;
+      }
+
+      return {
+        timestamp: price[0],
+        // Use closing price as representative
+        open: price[1],
+        high: price[1] * (1 + Math.random() * 0.02),
+        low: price[1] * (1 - Math.random() * 0.02),
+        close: price[1],
+        volume: (volumes && volumes[i] && volumes[i][1]) || 0
+      };
+    }).filter(c => c !== null);
+
+    if (candles.length === 0) {
+      throw new Error('Failed to parse CoinGecko price data');
+    }
+
     return candles;
     
   } catch (error) {
@@ -437,7 +456,6 @@ function validateCryptoData(data) {
     dataPoints
   };
 }
-
 // ============================================================================
 // MAIN ENTRY POINT WITH FALLBACK
 // ============================================================================

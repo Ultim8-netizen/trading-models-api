@@ -546,32 +546,89 @@ module.exports = async (req, res) => {
 };
 
 /**
- * Health & status endpoint
+ * Main fetch endpoint with health check support
+ * GET /api/fetch-data?symbol=BTC/USDT
+ * GET /api/fetch-data?batch=BTC/USDT,EURUSD
  * GET /api/fetch-data?health=true
  */
-module.exports.health = async (req, res) => {
+module.exports = async (req, res) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end();
+  }
+
+  // ===== HEALTH CHECK =====
   if (req.query.health === 'true') {
-    const cacheStats = orchestrator.getCacheStats();
-    const quotaReport = orchestrator.getQuotaReport();
-    const twelveDataStatus = orchestrator.getTwelveDataStatus();
-    const recentRequests = orchestrator.getRecentRequests(5);
+    try {
+      const cacheStats = orchestrator.getCacheStats();
+      const quotaReport = orchestrator.getQuotaReport();
+      const recentRequests = orchestrator.getRecentRequests(5);
+      
+      return res.status(200).json({
+        status: 'healthy',
+        service: 'fetch-data',
+        cache: cacheStats,
+        quota: quotaReport,
+        recentRequests,
+        supported: orchestrator.getSupportedSymbols(),
+        timestamp: new Date().toISOString()
+      });
+    } catch (error) {
+      return res.status(503).json({
+        status: 'unhealthy',
+        error: error.message,
+        timestamp: new Date().toISOString()
+      });
+    }
+  }
+
+  try {
+    const { symbol, batch } = req.query;
     
-    return res.status(200).json({
-      status: 'healthy',
-      cache: cacheStats,
-      quota: quotaReport,
-      twelveDataRemaining: twelveDataStatus.remaining,
-      recentRequests,
-      supported: orchestrator.getSupportedSymbols(),
+    if (!symbol && !batch) {
+      return res.status(400).json({
+        error: 'Missing parameter',
+        usage: {
+          single: '/api/fetch-data?symbol=BTC/USDT',
+          batch: '/api/fetch-data?batch=BTC/USDT,EURUSD',
+          health: '/api/fetch-data?health=true'
+        },
+        supported: orchestrator.getSupportedSymbols()
+      });
+    }
+    
+    if (symbol) {
+      const data = await orchestrator.fetchData(symbol);
+      
+      return res.status(200).json({
+        success: true,
+        symbol,
+        dataPoints: data['1h_close']?.length || 0,
+        timestamp: new Date().toISOString(),
+        data
+      });
+    }
+    
+    if (batch) {
+      const symbols = batch.split(',').map(s => s.trim());
+      const result = await orchestrator.fetchBatch(symbols);
+      
+      return res.status(200).json({
+        success: result.success,
+        stats: result.stats,
+        timestamp: new Date().toISOString(),
+        errors: result.errors
+      });
+    }
+    
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      error: error.message,
       timestamp: new Date().toISOString()
     });
   }
-  
-  return res.status(404).end();
 };
-
-/**
- * Export for direct usage
- */
-module.exports.DataOrchestrator = DataOrchestrator;
-module.exports.orchestrator = orchestrator;
