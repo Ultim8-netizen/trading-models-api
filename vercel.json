@@ -3,8 +3,8 @@
   "name": "trading-models-api",
   "functions": {
     "api/**/*.js": {
-      "memory": 2048,
-      "maxDuration": 30
+      "memory": 1024,
+      "maxDuration": 10
     }
   },
   "rewrites": [
