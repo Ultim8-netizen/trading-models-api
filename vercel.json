@@ -1,46 +1,38 @@
 {
   "version": 2,
-  "name": "trading-models-api",
   "buildCommand": "npm install",
   "outputDirectory": "./",
   "functions": {
     "api/**/*.js": {
       "memory": 1024,
       "maxDuration": 10,
-      "runtime": "nodejs18.x",
       "includeFiles": "models/**"
     }
   },
-  "routes": [
+  "rewrites": [
     {
-      "src": "/api/predict-crypto",
-      "dest": "/api/predict-crypto.js",
-      "methods": ["POST", "OPTIONS"]
+      "source": "/api/predict-crypto",
+      "destination": "/api/predict-crypto.js"
     },
     {
-      "src": "/api/predict-forex",
-      "dest": "/api/predict-forex.js",
-      "methods": ["POST", "OPTIONS"]
+      "source": "/api/predict-forex",
+      "destination": "/api/predict-forex.js"
     },
     {
-      "src": "/api/fetch-data(.*)",
-      "dest": "/api/data-orchestrator.js",
-      "methods": ["GET", "OPTIONS"]
+      "source": "/api/fetch-data(.*)",
+      "destination": "/api/data-orchestrator.js"
     },
     {
-      "src": "/api/get-predictions(.*)",
-      "dest": "/api/get-predictions.js",
-      "methods": ["GET", "OPTIONS"]
+      "source": "/api/get-predictions(.*)",
+      "destination": "/api/get-predictions.js"
     },
     {
-      "src": "/api/store-prediction",
-      "dest": "/api/store-prediction.js",
-      "methods": ["POST", "OPTIONS"]
+      "source": "/api/store-prediction",
+      "destination": "/api/store-prediction.js"
     },
     {
-      "src": "/(.*)",
-      "dest": "/public/index.html",
-      "methods": ["GET"]
+      "source": "/(.*)",
+      "destination": "/public/index.html"
     }
   ],
   "headers": [
