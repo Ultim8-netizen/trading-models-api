@@ -2,7 +2,7 @@
 // CONFIGURATION - FIXED: Dynamic API base URL
 // ============================================================================
 const CONFIG = {
-    API_BASE: window.location.origin, // FIXED: Dynamically uses current domain
+    API_BASE: 'https://trading-models.vercel.app', // ← Your Vercel deployment URL
     REFRESH_INTERVAL: 60000,
     CACHE_DURATION: 30000,
     MAX_RETRIES: 3,
