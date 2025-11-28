@@ -68,13 +68,7 @@ jobs:
           echo "  🤖 Running prediction..."
           PRED_RESPONSE=$(curl -s -X POST "${{ env.API_BASE_URL }}/api/predict-crypto" \
             -H "Content-Type: application/json" \
-            --data-binary @- <<EOF
-{
-  "symbol": "BTC/USDT",
-  "data": $DATA_PAYLOAD
-}
-EOF
-          )
+            -d "{\"symbol\":\"BTC/USDT\",\"data\":$DATA_PAYLOAD}")
           
           # Parse prediction result
           PRED_CLASS=$(echo "$PRED_RESPONSE" | jq -r '.class // "UNKNOWN"')
@@ -116,13 +110,7 @@ EOF
           echo "  🤖 Running prediction..."
           PRED_RESPONSE=$(curl -s -X POST "${{ env.API_BASE_URL }}/api/predict-crypto" \
             -H "Content-Type: application/json" \
-            --data-binary @- <<EOF
-{
-  "symbol": "ETH/USDT",
-  "data": $DATA_PAYLOAD
-}
-EOF
-          )
+            -d "{\"symbol\":\"ETH/USDT\",\"data\":$DATA_PAYLOAD}")
           
           PRED_CLASS=$(echo "$PRED_RESPONSE" | jq -r '.class // "UNKNOWN"')
           PRED_CONF=$(echo "$PRED_RESPONSE" | jq -r '.confidence // 0')
@@ -163,13 +151,7 @@ EOF
           echo "  🤖 Running prediction..."
           PRED_RESPONSE=$(curl -s -X POST "${{ env.API_BASE_URL }}/api/predict-crypto" \
             -H "Content-Type: application/json" \
-            --data-binary @- <<EOF
-{
-  "symbol": "SOL/USDT",
-  "data": $DATA_PAYLOAD
-}
-EOF
-          )
+            -d "{\"symbol\":\"SOL/USDT\",\"data\":$DATA_PAYLOAD}")
           
           PRED_CLASS=$(echo "$PRED_RESPONSE" | jq -r '.class // "UNKNOWN"')
           PRED_CONF=$(echo "$PRED_RESPONSE" | jq -r '.confidence // 0')
@@ -210,13 +192,7 @@ EOF
           echo "  🤖 Running prediction..."
           PRED_RESPONSE=$(curl -s -X POST "${{ env.API_BASE_URL }}/api/predict-forex" \
             -H "Content-Type: application/json" \
-            --data-binary @- <<EOF
-{
-  "pair": "EURUSD",
-  "data": $DATA_PAYLOAD
-}
-EOF
-          )
+            -d "{\"pair\":\"EURUSD\",\"data\":$DATA_PAYLOAD}")
           
           PRED_CLASS=$(echo "$PRED_RESPONSE" | jq -r '.class // "UNKNOWN"')
           PRED_CONF=$(echo "$PRED_RESPONSE" | jq -r '.confidence // 0')
@@ -257,13 +233,7 @@ EOF
           echo "  🤖 Running prediction..."
           PRED_RESPONSE=$(curl -s -X POST "${{ env.API_BASE_URL }}/api/predict-forex" \
             -H "Content-Type: application/json" \
-            --data-binary @- <<EOF
-{
-  "pair": "GBPUSD",
-  "data": $DATA_PAYLOAD
-}
-EOF
-          )
+            -d "{\"pair\":\"GBPUSD\",\"data\":$DATA_PAYLOAD}")
           
           PRED_CLASS=$(echo "$PRED_RESPONSE" | jq -r '.class // "UNKNOWN"')
           PRED_CONF=$(echo "$PRED_RESPONSE" | jq -r '.confidence // 0')
