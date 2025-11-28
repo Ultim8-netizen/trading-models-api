@@ -1,7 +1,6 @@
 name: Manual Predictions Trigger
 
 on:
-  # Allow manual trigger only
   workflow_dispatch:
     inputs:
       symbols_to_predict:
@@ -31,14 +30,10 @@ jobs:
           echo "🎯 API Base URL: ${{ env.API_BASE_URL }}"
           echo "📊 Symbols: ${{ github.event.inputs.symbols_to_predict || 'BTC/USDT,ETH/USDT,SOL/USDT,EURUSD,GBPUSD' }}"
       
-      # ======================================================================
-      # Predict: BTC/USDT
-      # ======================================================================
       - name: Predict BTC/USDT
         run: |
           echo "🪙 Processing BTC/USDT..."
           
-          # Fetch data
           echo "  📥 Fetching market data..."
           DATA_RESPONSE=$(curl -s "${{ env.API_BASE_URL }}/api/fetch-data?symbol=BTC%2FUSDT" --max-time 30)
           
@@ -47,7 +42,6 @@ jobs:
             exit 0
           fi
           
-          # Check if data is valid
           echo "$DATA_RESPONSE" | jq empty 2>/dev/null || {
             echo "  ❌ Invalid JSON response"
             exit 0
@@ -61,16 +55,13 @@ jobs:
           
           echo "  ✅ Data fetched successfully"
           
-          # Extract data payload
           DATA_PAYLOAD=$(echo "$DATA_RESPONSE" | jq -c '.data')
           
-          # Run prediction
           echo "  🤖 Running prediction..."
           PRED_RESPONSE=$(curl -s -X POST "${{ env.API_BASE_URL }}/api/predict-crypto" \
             -H "Content-Type: application/json" \
             -d "{\"symbol\":\"BTC/USDT\",\"data\":$DATA_PAYLOAD}")
           
-          # Parse prediction result
           PRED_CLASS=$(echo "$PRED_RESPONSE" | jq -r '.class // "UNKNOWN"')
           PRED_CONF=$(echo "$PRED_RESPONSE" | jq -r '.confidence // 0')
           STORED=$(echo "$PRED_RESPONSE" | jq -r '.stored // false')
@@ -78,9 +69,6 @@ jobs:
           echo "  ✅ Prediction: $PRED_CLASS (Confidence: $PRED_CONF)"
           echo "  💾 Stored: $STORED"
       
-      # ======================================================================
-      # Predict: ETH/USDT
-      # ======================================================================
       - name: Predict ETH/USDT
         run: |
           echo "🪙 Processing ETH/USDT..."
@@ -119,9 +107,6 @@ jobs:
           echo "  ✅ Prediction: $PRED_CLASS (Confidence: $PRED_CONF)"
           echo "  💾 Stored: $STORED"
       
-      # ======================================================================
-      # Predict: SOL/USDT
-      # ======================================================================
       - name: Predict SOL/USDT
         run: |
           echo "🪙 Processing SOL/USDT..."
@@ -160,9 +145,6 @@ jobs:
           echo "  ✅ Prediction: $PRED_CLASS (Confidence: $PRED_CONF)"
           echo "  💾 Stored: $STORED"
       
-      # ======================================================================
-      # Predict: EURUSD
-      # ======================================================================
       - name: Predict EURUSD
         run: |
           echo "💱 Processing EURUSD..."
@@ -201,9 +183,6 @@ jobs:
           echo "  ✅ Prediction: $PRED_CLASS (Confidence: $PRED_CONF)"
           echo "  💾 Stored: $STORED"
       
-      # ======================================================================
-      # Predict: GBPUSD
-      # ======================================================================
       - name: Predict GBPUSD
         run: |
           echo "💱 Processing GBPUSD..."
@@ -242,9 +221,6 @@ jobs:
           echo "  ✅ Prediction: $PRED_CLASS (Confidence: $PRED_CONF)"
           echo "  💾 Stored: $STORED"
       
-      # ======================================================================
-      # Verification
-      # ======================================================================
       - name: Verify stored predictions
         run: |
           echo "🔍 Checking database..."
