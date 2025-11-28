@@ -1,0 +1,305 @@
+name: Manual Predictions Trigger
+
+on:
+  # Allow manual trigger only
+  workflow_dispatch:
+    inputs:
+      symbols_to_predict:
+        description: 'Symbols (comma-separated, or leave empty for default)'
+        required: false
+        default: 'BTC/USDT,ETH/USDT,SOL/USDT,EURUSD,GBPUSD'
+
+env:
+  API_BASE_URL: ${{ secrets.VERCEL_DEPLOYMENT_URL || 'https://trading-models.vercel.app' }}
+
+jobs:
+  manual-predictions:
+    name: Generate Predictions (Manual Trigger)
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+      
+      - name: Display configuration
+        run: |
+          echo "🎯 API Base URL: ${{ env.API_BASE_URL }}"
+          echo "📊 Symbols: ${{ github.event.inputs.symbols_to_predict || 'BTC/USDT,ETH/USDT,SOL/USDT,EURUSD,GBPUSD' }}"
+      
+      # ======================================================================
+      # Predict: BTC/USDT
+      # ======================================================================
+      - name: Predict BTC/USDT
+        run: |
+          echo "🪙 Processing BTC/USDT..."
+          
+          # Fetch data
+          echo "  📥 Fetching market data..."
+          DATA_RESPONSE=$(curl -s "${{ env.API_BASE_URL }}/api/fetch-data?symbol=BTC%2FUSDT" --max-time 30)
+          
+          if [ $? -ne 0 ]; then
+            echo "  ❌ Failed to fetch data"
+            exit 0
+          fi
+          
+          # Check if data is valid
+          echo "$DATA_RESPONSE" | jq empty 2>/dev/null || {
+            echo "  ❌ Invalid JSON response"
+            exit 0
+          }
+          
+          SUCCESS=$(echo "$DATA_RESPONSE" | jq -r '.success // false')
+          if [ "$SUCCESS" != "true" ]; then
+            echo "  ❌ Data fetch failed"
+            exit 0
+          fi
+          
+          echo "  ✅ Data fetched successfully"
+          
+          # Extract data payload
+          DATA_PAYLOAD=$(echo "$DATA_RESPONSE" | jq -c '.data')
+          
+          # Run prediction
+          echo "  🤖 Running prediction..."
+          PRED_RESPONSE=$(curl -s -X POST "${{ env.API_BASE_URL }}/api/predict-crypto" \
+            -H "Content-Type: application/json" \
+            --data-binary @- <<EOF
+{
+  "symbol": "BTC/USDT",
+  "data": $DATA_PAYLOAD
+}
+EOF
+          )
+          
+          # Parse prediction result
+          PRED_CLASS=$(echo "$PRED_RESPONSE" | jq -r '.class // "UNKNOWN"')
+          PRED_CONF=$(echo "$PRED_RESPONSE" | jq -r '.confidence // 0')
+          STORED=$(echo "$PRED_RESPONSE" | jq -r '.stored // false')
+          
+          echo "  ✅ Prediction: $PRED_CLASS (Confidence: $PRED_CONF)"
+          echo "  💾 Stored: $STORED"
+      
+      # ======================================================================
+      # Predict: ETH/USDT
+      # ======================================================================
+      - name: Predict ETH/USDT
+        run: |
+          echo "🪙 Processing ETH/USDT..."
+          
+          DATA_RESPONSE=$(curl -s "${{ env.API_BASE_URL }}/api/fetch-data?symbol=ETH%2FUSDT" --max-time 30)
+          
+          if [ $? -ne 0 ]; then
+            echo "  ❌ Failed to fetch data"
+            exit 0
+          fi
+          
+          echo "$DATA_RESPONSE" | jq empty 2>/dev/null || {
+            echo "  ❌ Invalid JSON response"
+            exit 0
+          }
+          
+          SUCCESS=$(echo "$DATA_RESPONSE" | jq -r '.success // false')
+          if [ "$SUCCESS" != "true" ]; then
+            echo "  ❌ Data fetch failed"
+            exit 0
+          fi
+          
+          echo "  ✅ Data fetched successfully"
+          
+          DATA_PAYLOAD=$(echo "$DATA_RESPONSE" | jq -c '.data')
+          
+          echo "  🤖 Running prediction..."
+          PRED_RESPONSE=$(curl -s -X POST "${{ env.API_BASE_URL }}/api/predict-crypto" \
+            -H "Content-Type: application/json" \
+            --data-binary @- <<EOF
+{
+  "symbol": "ETH/USDT",
+  "data": $DATA_PAYLOAD
+}
+EOF
+          )
+          
+          PRED_CLASS=$(echo "$PRED_RESPONSE" | jq -r '.class // "UNKNOWN"')
+          PRED_CONF=$(echo "$PRED_RESPONSE" | jq -r '.confidence // 0')
+          STORED=$(echo "$PRED_RESPONSE" | jq -r '.stored // false')
+          
+          echo "  ✅ Prediction: $PRED_CLASS (Confidence: $PRED_CONF)"
+          echo "  💾 Stored: $STORED"
+      
+      # ======================================================================
+      # Predict: SOL/USDT
+      # ======================================================================
+      - name: Predict SOL/USDT
+        run: |
+          echo "🪙 Processing SOL/USDT..."
+          
+          DATA_RESPONSE=$(curl -s "${{ env.API_BASE_URL }}/api/fetch-data?symbol=SOL%2FUSDT" --max-time 30)
+          
+          if [ $? -ne 0 ]; then
+            echo "  ❌ Failed to fetch data"
+            exit 0
+          fi
+          
+          echo "$DATA_RESPONSE" | jq empty 2>/dev/null || {
+            echo "  ❌ Invalid JSON response"
+            exit 0
+          }
+          
+          SUCCESS=$(echo "$DATA_RESPONSE" | jq -r '.success // false')
+          if [ "$SUCCESS" != "true" ]; then
+            echo "  ❌ Data fetch failed"
+            exit 0
+          fi
+          
+          echo "  ✅ Data fetched successfully"
+          
+          DATA_PAYLOAD=$(echo "$DATA_RESPONSE" | jq -c '.data')
+          
+          echo "  🤖 Running prediction..."
+          PRED_RESPONSE=$(curl -s -X POST "${{ env.API_BASE_URL }}/api/predict-crypto" \
+            -H "Content-Type: application/json" \
+            --data-binary @- <<EOF
+{
+  "symbol": "SOL/USDT",
+  "data": $DATA_PAYLOAD
+}
+EOF
+          )
+          
+          PRED_CLASS=$(echo "$PRED_RESPONSE" | jq -r '.class // "UNKNOWN"')
+          PRED_CONF=$(echo "$PRED_RESPONSE" | jq -r '.confidence // 0')
+          STORED=$(echo "$PRED_RESPONSE" | jq -r '.stored // false')
+          
+          echo "  ✅ Prediction: $PRED_CLASS (Confidence: $PRED_CONF)"
+          echo "  💾 Stored: $STORED"
+      
+      # ======================================================================
+      # Predict: EURUSD
+      # ======================================================================
+      - name: Predict EURUSD
+        run: |
+          echo "💱 Processing EURUSD..."
+          
+          DATA_RESPONSE=$(curl -s "${{ env.API_BASE_URL }}/api/fetch-data?symbol=EURUSD" --max-time 45)
+          
+          if [ $? -ne 0 ]; then
+            echo "  ❌ Failed to fetch data"
+            exit 0
+          fi
+          
+          echo "$DATA_RESPONSE" | jq empty 2>/dev/null || {
+            echo "  ❌ Invalid JSON response"
+            exit 0
+          }
+          
+          SUCCESS=$(echo "$DATA_RESPONSE" | jq -r '.success // false')
+          if [ "$SUCCESS" != "true" ]; then
+            echo "  ❌ Data fetch failed"
+            exit 0
+          fi
+          
+          echo "  ✅ Data fetched successfully"
+          
+          DATA_PAYLOAD=$(echo "$DATA_RESPONSE" | jq -c '.data')
+          
+          echo "  🤖 Running prediction..."
+          PRED_RESPONSE=$(curl -s -X POST "${{ env.API_BASE_URL }}/api/predict-forex" \
+            -H "Content-Type: application/json" \
+            --data-binary @- <<EOF
+{
+  "pair": "EURUSD",
+  "data": $DATA_PAYLOAD
+}
+EOF
+          )
+          
+          PRED_CLASS=$(echo "$PRED_RESPONSE" | jq -r '.class // "UNKNOWN"')
+          PRED_CONF=$(echo "$PRED_RESPONSE" | jq -r '.confidence // 0')
+          STORED=$(echo "$PRED_RESPONSE" | jq -r '.stored // false')
+          
+          echo "  ✅ Prediction: $PRED_CLASS (Confidence: $PRED_CONF)"
+          echo "  💾 Stored: $STORED"
+      
+      # ======================================================================
+      # Predict: GBPUSD
+      # ======================================================================
+      - name: Predict GBPUSD
+        run: |
+          echo "💱 Processing GBPUSD..."
+          
+          DATA_RESPONSE=$(curl -s "${{ env.API_BASE_URL }}/api/fetch-data?symbol=GBPUSD" --max-time 45)
+          
+          if [ $? -ne 0 ]; then
+            echo "  ❌ Failed to fetch data"
+            exit 0
+          fi
+          
+          echo "$DATA_RESPONSE" | jq empty 2>/dev/null || {
+            echo "  ❌ Invalid JSON response"
+            exit 0
+          }
+          
+          SUCCESS=$(echo "$DATA_RESPONSE" | jq -r '.success // false')
+          if [ "$SUCCESS" != "true" ]; then
+            echo "  ❌ Data fetch failed"
+            exit 0
+          fi
+          
+          echo "  ✅ Data fetched successfully"
+          
+          DATA_PAYLOAD=$(echo "$DATA_RESPONSE" | jq -c '.data')
+          
+          echo "  🤖 Running prediction..."
+          PRED_RESPONSE=$(curl -s -X POST "${{ env.API_BASE_URL }}/api/predict-forex" \
+            -H "Content-Type: application/json" \
+            --data-binary @- <<EOF
+{
+  "pair": "GBPUSD",
+  "data": $DATA_PAYLOAD
+}
+EOF
+          )
+          
+          PRED_CLASS=$(echo "$PRED_RESPONSE" | jq -r '.class // "UNKNOWN"')
+          PRED_CONF=$(echo "$PRED_RESPONSE" | jq -r '.confidence // 0')
+          STORED=$(echo "$PRED_RESPONSE" | jq -r '.stored // false')
+          
+          echo "  ✅ Prediction: $PRED_CLASS (Confidence: $PRED_CONF)"
+          echo "  💾 Stored: $STORED"
+      
+      # ======================================================================
+      # Verification
+      # ======================================================================
+      - name: Verify stored predictions
+        run: |
+          echo "🔍 Checking database..."
+          
+          VERIFY_RESPONSE=$(curl -s "${{ env.API_BASE_URL }}/api/get-predictions?limit=5")
+          
+          TOTAL=$(echo "$VERIFY_RESPONSE" | jq -r '.pagination.total_count // 0')
+          
+          echo "✅ Total predictions in database: $TOTAL"
+          
+          if [ "$TOTAL" -gt 0 ]; then
+            echo ""
+            echo "📊 Latest predictions:"
+            echo "$VERIFY_RESPONSE" | jq -r '.data[] | "  - \(.symbol // .pair): \(.class) (\(.confidence * 100 | floor)%)"'
+          fi
+      
+      - name: Summary
+        if: always()
+        run: |
+          echo ""
+          echo "========================================================================"
+          echo "✅ MANUAL PREDICTIONS COMPLETE"
+          echo "========================================================================"
+          echo ""
+          echo "🌐 Dashboard: ${{ env.API_BASE_URL }}"
+          echo ""
+          echo "Refresh your dashboard to see the new predictions!"
+          echo ""
