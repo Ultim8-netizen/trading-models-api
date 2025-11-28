@@ -1,0 +1,37 @@
+name: Test MongoDB Connection
+
+on:
+  workflow_dispatch:
+
+jobs:
+  test-mongodb:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Test MongoDB API connection
+        env:
+          API_BASE_URL: ${{ secrets.API_BASE_URL }}
+        run: |
+          echo "🧪 Testing MongoDB connection..."
+
+          RESPONSE=$(curl -s -o response.json -w "%{http_code}" \
+            -X POST "$API_BASE_URL/api/store-prediction" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "asset_class": "crypto",
+              "symbol": "TEST/USDT",
+              "prediction": 2,
+              "class": "UP",
+              "confidence": 0.99,
+              "probabilities": {"down": 0.0, "neutral": 0.01, "up": 0.99},
+              "models_used": 1,
+              "models_failed": 0,
+              "inference_time_ms": 100,
+              "timestamp": "2024-01-01T00:00:00Z",
+              "request_id": "test-123",
+              "features_count": 45
+            }')
+
+          echo "HTTP CODE: $RESPONSE"
+          echo "Response body:"
+          cat response.json

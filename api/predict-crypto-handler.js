@@ -43,7 +43,7 @@ const CONFIG = {
     ],
     MIN_MODELS_REQUIRED: 3,
     PREDICTION_TIMEOUT_MS: 5000,
-    STORAGE_TIMEOUT_MS: 3000,
+    STORAGE_TIMEOUT_MS: 10000, // FIXED: Increased from 3000ms to 10000ms
     MEMORY_WARNING_THRESHOLD_MB: 700,
     MEMORY_CRITICAL_THRESHOLD_MB: 900,
     MEMORY_LIMIT_MB: 1024
@@ -370,6 +370,7 @@ function extractFeatureVector(engineeredData, featureList) {
 
 // Alias for backward compatibility
 const extractCryptoFeatureVector = extractFeatureVector;
+
 // ============================================================================
 // OPTIMIZED MODEL INFERENCE
 // ============================================================================
@@ -599,14 +600,20 @@ function ensembleCryptoPredictions(predictions) {
         modelsUsed: predictions.length
     };
 }
-
 // ============================================================================
-// MONGODB STORAGE (Optimized with timeout)
+// MONGODB STORAGE (FIXED - Enhanced Error Handling & Timeout)
 // ============================================================================
 
 /**
- * OPTIMIZED: Store prediction in MongoDB (non-blocking with timeout)
+ * OPTIMIZED & FIXED: Store prediction in MongoDB (non-blocking with proper timeout)
  * Uses async pattern - doesn't block response
+ * 
+ * FIXES:
+ * - Uses localhost for same-process API calls (faster, more reliable)
+ * - Increased timeout from 3s to 10s
+ * - Enhanced error logging with stack traces
+ * - Proper response validation and error text extraction
+ * - AbortSignal for timeout instead of Promise.race
  * 
  * @param {Object} predictionData - Prediction to store
  * @param {Object} req - Request object
@@ -614,41 +621,73 @@ function ensembleCryptoPredictions(predictions) {
  */
 async function storeCryptoPredictionAsync(predictionData, req) {
     try {
-        const protocol = req.headers['x-forwarded-proto'] || 'http';
-        const host = req.headers['x-forwarded-host'] || req.headers.host;
-
+        // FIXED: Use localhost for same-process calls (more reliable on Vercel)
         const apiUrl = process.env.VERCEL_URL
             ? `https://${process.env.VERCEL_URL}/api/store-prediction`
-            : `${protocol}://${host}/api/store-prediction`;
+            : 'http://localhost:3000/api/store-prediction';
 
-        console.log(`[Storage] Storing to MongoDB (async)...`);
+        console.log(`[Storage] Storing to MongoDB (timeout: ${CONFIG.STORAGE_TIMEOUT_MS}ms)...`);
+        console.log(`[Storage] Target URL: ${apiUrl}`);
 
-        const response = await Promise.race([
-            fetch(apiUrl, {
+        // FIXED: Create AbortController for proper timeout handling
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), CONFIG.STORAGE_TIMEOUT_MS);
+
+        try {
+            const response = await fetch(apiUrl, {
                 method: 'POST',
                 headers: { 
                     'Content-Type': 'application/json',
                     'User-Agent': 'CryptoPredictions/2.0'
                 },
-                body: JSON.stringify(predictionData)
-            }),
-            new Promise((_, reject) =>
-                setTimeout(() => reject(new Error('Storage timeout')), CONFIG.STORAGE_TIMEOUT_MS)
-            )
-        ]);
+                body: JSON.stringify(predictionData),
+                signal: controller.signal
+            });
 
-        if (response.ok) {
+            clearTimeout(timeoutId);
+
+            // FIXED: Check response status and extract error details
+            if (!response.ok) {
+                const errorText = await response.text();
+                console.warn(`  ✗ Storage failed: HTTP ${response.status}`);
+                console.warn(`  Error details: ${errorText.substring(0, 200)}`);
+                return { 
+                    success: false, 
+                    error: `HTTP ${response.status}`,
+                    details: errorText.substring(0, 200)
+                };
+            }
+
             const result = await response.json();
-            console.log(`  ✓ Stored (ID: ${result.id})`);
+            console.log(`  ✓ Stored successfully (ID: ${result.id})`);
             return { success: true, id: result.id };
+
+        } catch (fetchError) {
+            clearTimeout(timeoutId);
+            
+            // Handle timeout vs other errors
+            if (fetchError.name === 'AbortError') {
+                console.warn(`  ✗ Storage timeout after ${CONFIG.STORAGE_TIMEOUT_MS}ms`);
+                return { 
+                    success: false, 
+                    error: 'Storage timeout',
+                    timeout: true 
+                };
+            }
+            
+            throw fetchError;
         }
 
-        console.warn(`  ✗ HTTP ${response.status}`);
-        return { success: false, error: `HTTP ${response.status}` };
-
     } catch (error) {
-        console.warn(`[Storage] Error: ${error.message}`);
-        return { success: false, error: error.message };
+        // FIXED: Enhanced error logging with stack trace
+        console.error(`[Storage] Error: ${error.message}`);
+        console.error(`[Storage] Stack: ${error.stack}`);
+        
+        return { 
+            success: false, 
+            error: error.message,
+            stack: error.stack
+        };
     }
 }
 
@@ -685,13 +724,23 @@ async function storeCryptoPrediction(predictionData, req) {
             console.log(`  ✓ Stored (ID: ${result.id})`);
             return { success: true, id: result.id };
         } else {
-            console.warn(`  ✗ HTTP ${response.status}`);
-            return { success: false, error: `HTTP ${response.status}` };
+            const errorText = await response.text();
+            console.warn(`  ✗ HTTP ${response.status}: ${errorText.substring(0, 100)}`);
+            return { 
+                success: false, 
+                error: `HTTP ${response.status}`,
+                details: errorText.substring(0, 100)
+            };
         }
 
     } catch (error) {
         console.warn(`  ✗ Error: ${error.message}`);
-        return { success: false, error: error.message };
+        console.warn(`  Stack: ${error.stack}`);
+        return { 
+            success: false, 
+            error: error.message,
+            stack: error.stack
+        };
     }
 }
 
@@ -726,7 +775,7 @@ module.exports = {
     // Ensemble
     ensembleCryptoPredictions,
     
-    // Storage
-    storeCryptoPredictionAsync, // NEW: Async version
-    storeCryptoPrediction // LEGACY: For compatibility
+    // Storage (FIXED)
+    storeCryptoPredictionAsync, // NEW: Fixed async version with proper timeout
+    storeCryptoPrediction // LEGACY: Updated with better error handling
 };

@@ -316,34 +316,23 @@ jobs:
         run: |
           echo "🔍 Checking database..."
           
-          RESPONSE=$(curl -s "${{ env.API_BASE_URL }}/api/get-predictions?limit=5" --max-time 10 -w "\nHTTP_CODE:%{http_code}")
+          # FIX: Simple health check instead of full fetch
+          RESPONSE=$(curl -s "${{ env.API_BASE_URL }}/api/store-prediction?health=true" \
+            --max-time 5 \
+            -w "\nHTTP_CODE:%{http_code}")
           
           HTTP_CODE=$(echo "$RESPONSE" | grep "HTTP_CODE:" | cut -d: -f2)
           BODY=$(echo "$RESPONSE" | sed '/HTTP_CODE:/d')
           
-          if [ "$HTTP_CODE" != "200" ]; then
-            echo "⚠️  API returned HTTP $HTTP_CODE"
-            echo "Response preview:"
-            echo "$BODY" | head -c 300
-            exit 0
-          fi
-          
-          if echo "$BODY" | jq empty 2>/dev/null; then
-            TOTAL=$(echo "$BODY" | jq -r '.pagination.total_count // 0')
+          if [ "$HTTP_CODE" = "200" ]; then
+            echo "✅ Storage service healthy"
             
-            echo "✅ Total predictions in database: $TOTAL"
-            
-            if [ "$TOTAL" -gt 0 ]; then
-              echo ""
-              echo "📊 Latest predictions:"
-              echo "$BODY" | jq -r '.data[] | "  - \(.symbol // .pair): \(.class) (\(.confidence * 100 | floor)%)"' 2>/dev/null || echo "  (Could not parse details)"
-            else
-              echo "⚠️  No predictions found in database"
-            fi
+            # Extract count if available
+            TOTAL=$(echo "$BODY" | jq -r '.total_predictions // 0' 2>/dev/null || echo "0")
+            echo "Total predictions in database: $TOTAL"
           else
-            echo "⚠️  Could not verify database (invalid response)"
-            echo "Response preview:"
-            echo "$BODY" | head -c 300
+            echo "⚠️  Storage service returned HTTP $HTTP_CODE"
+            echo "Response: $BODY"
           fi
       
       - name: Summary
