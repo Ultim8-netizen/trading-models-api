@@ -6,14 +6,26 @@ on:
 jobs:
   test-mongodb:
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Test MongoDB API connection
         env:
-          API_BASE_URL: ${{ secrets.API_BASE_URL }}
+          API_BASE_URL: ${{ secrets.VERCEL_DEPLOYMENT_URL }}
         run: |
+          set -e
+
           echo "🧪 Testing MongoDB connection..."
 
+          # Validate secret
+          if [ -z "$API_BASE_URL" ]; then
+            echo "ERROR: API_BASE_URL is empty. Did you forget to set VERCEL_URL in GitHub Secrets?"
+            exit 1
+          fi
+
+          echo "Using base URL: $API_BASE_URL"
+
+          # Perform request
+          CURL_EXIT_CODE=0
           RESPONSE=$(curl -s -o response.json -w "%{http_code}" \
             -X POST "$API_BASE_URL/api/store-prediction" \
             -H "Content-Type: application/json" \
@@ -30,8 +42,24 @@ jobs:
               "timestamp": "2024-01-01T00:00:00Z",
               "request_id": "test-123",
               "features_count": 45
-            }')
+            }') || CURL_EXIT_CODE=$?
 
-          echo "HTTP CODE: $RESPONSE"
+          echo "Curl exit code: $CURL_EXIT_CODE"
+          echo "HTTP code: $RESPONSE"
+
           echo "Response body:"
           cat response.json
+
+          # Fail if curl failed (DNS, connection refused, bad URL, etc.)
+          if [ $CURL_EXIT_CODE -ne 0 ]; then
+            echo "Curl failed with exit code $CURL_EXIT_CODE"
+            exit $CURL_EXIT_CODE
+          fi
+
+          # Fail on any non-200 response
+          if [ "$RESPONSE" -ne 200 ]; then
+            echo "API returned non-200 status code. Failing job."
+            exit 1
+          fi
+
+          echo "✓ MongoDB API test succeeded."
