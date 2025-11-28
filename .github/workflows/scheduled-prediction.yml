@@ -155,18 +155,18 @@ jobs:
           # Read fetched data
           DATA=$(jq -c '.data' market_data.json)
           
-          # Properly escape JSON for curl
+          # Create properly formatted JSON payload
+          PAYLOAD=$(jq -n \
+            --arg symbol "${{ matrix.symbol }}" \
+            --argjson data "$DATA" \
+            '{symbol: $symbol, data: $data}')
+          
+          # Send prediction request
           PREDICTION_RESPONSE=$(curl -s -w "\n%{http_code}" \
             -X POST "${{ env.API_BASE_URL }}/api/predict-crypto" \
             -H "Content-Type: application/json" \
             -H "User-Agent: GitHub-Actions-Scheduler/1.0" \
-            --data-binary @- <<EOF
-{
-  "symbol": "${{ matrix.symbol }}",
-  "data": $DATA
-}
-EOF
-          )
+            -d "$PAYLOAD")
           
           # Split response and status code
           PRED_BODY=$(echo "$PREDICTION_RESPONSE" | head -n -1)
@@ -321,18 +321,20 @@ EOF
           
           echo "🤖 Running forex prediction for ${{ matrix.pair }}..."
           
+          # Read fetched data
           DATA=$(jq -c '.data' forex_data.json)
           
+          # Create properly formatted JSON payload
+          PAYLOAD=$(jq -n \
+            --arg pair "${{ matrix.pair }}" \
+            --argjson data "$DATA" \
+            '{pair: $pair, data: $data}')
+          
+          # Send prediction request
           PREDICTION_RESPONSE=$(curl -s -w "\n%{http_code}" \
             -X POST "${{ env.API_BASE_URL }}/api/predict-forex" \
             -H "Content-Type: application/json" \
-            --data-binary @- <<EOF
-{
-  "pair": "${{ matrix.pair }}",
-  "data": $DATA
-}
-EOF
-          )
+            -d "$PAYLOAD")
           
           PRED_BODY=$(echo "$PREDICTION_RESPONSE" | head -n -1)
           PRED_CODE=$(echo "$PREDICTION_RESPONSE" | tail -n 1)
