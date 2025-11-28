@@ -30,62 +30,102 @@ jobs:
           echo "🎯 API Base URL: ${{ env.API_BASE_URL }}"
           echo "📊 Symbols: ${{ github.event.inputs.symbols_to_predict || 'BTC/USDT,ETH/USDT,SOL/USDT,EURUSD,GBPUSD' }}"
       
+      # ======================================================================
+      # Predict: BTC/USDT
+      # ======================================================================
       - name: Predict BTC/USDT
+        continue-on-error: true
         run: |
           echo "🪙 Processing BTC/USDT..."
           
+          # Fetch data
           echo "  📥 Fetching market data..."
-          DATA_RESPONSE=$(curl -s "${{ env.API_BASE_URL }}/api/fetch-data?symbol=BTC%2FUSDT" --max-time 30)
+          DATA_RESPONSE=$(curl -s "${{ env.API_BASE_URL }}/api/fetch-data?symbol=BTC%2FUSDT" --max-time 30 -w "\nHTTP_CODE:%{http_code}")
           
-          if [ $? -ne 0 ]; then
-            echo "  ❌ Failed to fetch data"
+          # Extract HTTP code
+          HTTP_CODE=$(echo "$DATA_RESPONSE" | grep "HTTP_CODE:" | cut -d: -f2)
+          BODY=$(echo "$DATA_RESPONSE" | sed '/HTTP_CODE:/d')
+          
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "  ❌ Failed to fetch data (HTTP $HTTP_CODE)"
+            echo "  Response: $BODY" | head -c 200
             exit 0
           fi
           
-          echo "$DATA_RESPONSE" | jq empty 2>/dev/null || {
+          # Check if data is valid JSON
+          if ! echo "$BODY" | jq empty 2>/dev/null; then
             echo "  ❌ Invalid JSON response"
+            echo "  Response preview: $BODY" | head -c 200
             exit 0
-          }
+          fi
           
-          SUCCESS=$(echo "$DATA_RESPONSE" | jq -r '.success // false')
+          SUCCESS=$(echo "$BODY" | jq -r '.success // false')
           if [ "$SUCCESS" != "true" ]; then
-            echo "  ❌ Data fetch failed"
+            ERROR_MSG=$(echo "$BODY" | jq -r '.error // "Unknown error"')
+            echo "  ❌ Data fetch failed: $ERROR_MSG"
             exit 0
           fi
           
           echo "  ✅ Data fetched successfully"
           
-          DATA_PAYLOAD=$(echo "$DATA_RESPONSE" | jq -c '.data')
+          # Extract data payload
+          DATA_PAYLOAD=$(echo "$BODY" | jq -c '.data')
           
+          # Run prediction
           echo "  🤖 Running prediction..."
           PRED_RESPONSE=$(curl -s -X POST "${{ env.API_BASE_URL }}/api/predict-crypto" \
             -H "Content-Type: application/json" \
-            -d "{\"symbol\":\"BTC/USDT\",\"data\":$DATA_PAYLOAD}")
+            --max-time 30 \
+            -w "\nHTTP_CODE:%{http_code}" \
+            --data-binary @- <<EOF
+{
+  "symbol": "BTC/USDT",
+  "data": $DATA_PAYLOAD
+}
+EOF
+          )
           
-          PRED_CLASS=$(echo "$PRED_RESPONSE" | jq -r '.class // "UNKNOWN"')
-          PRED_CONF=$(echo "$PRED_RESPONSE" | jq -r '.confidence // 0')
-          STORED=$(echo "$PRED_RESPONSE" | jq -r '.stored // false')
+          # Extract HTTP code
+          PRED_HTTP_CODE=$(echo "$PRED_RESPONSE" | grep "HTTP_CODE:" | cut -d: -f2)
+          PRED_BODY=$(echo "$PRED_RESPONSE" | sed '/HTTP_CODE:/d')
+          
+          if [ "$PRED_HTTP_CODE" != "200" ]; then
+            echo "  ❌ Prediction failed (HTTP $PRED_HTTP_CODE)"
+            exit 0
+          fi
+          
+          # Parse prediction result
+          PRED_CLASS=$(echo "$PRED_BODY" | jq -r '.class // "UNKNOWN"')
+          PRED_CONF=$(echo "$PRED_BODY" | jq -r '.confidence // 0')
+          STORED=$(echo "$PRED_BODY" | jq -r '.stored // false')
           
           echo "  ✅ Prediction: $PRED_CLASS (Confidence: $PRED_CONF)"
           echo "  💾 Stored: $STORED"
       
+      # ======================================================================
+      # Predict: ETH/USDT
+      # ======================================================================
       - name: Predict ETH/USDT
+        continue-on-error: true
         run: |
           echo "🪙 Processing ETH/USDT..."
           
-          DATA_RESPONSE=$(curl -s "${{ env.API_BASE_URL }}/api/fetch-data?symbol=ETH%2FUSDT" --max-time 30)
+          DATA_RESPONSE=$(curl -s "${{ env.API_BASE_URL }}/api/fetch-data?symbol=ETH%2FUSDT" --max-time 30 -w "\nHTTP_CODE:%{http_code}")
           
-          if [ $? -ne 0 ]; then
-            echo "  ❌ Failed to fetch data"
+          HTTP_CODE=$(echo "$DATA_RESPONSE" | grep "HTTP_CODE:" | cut -d: -f2)
+          BODY=$(echo "$DATA_RESPONSE" | sed '/HTTP_CODE:/d')
+          
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "  ❌ Failed to fetch data (HTTP $HTTP_CODE)"
             exit 0
           fi
           
-          echo "$DATA_RESPONSE" | jq empty 2>/dev/null || {
+          if ! echo "$BODY" | jq empty 2>/dev/null; then
             echo "  ❌ Invalid JSON response"
             exit 0
-          }
+          fi
           
-          SUCCESS=$(echo "$DATA_RESPONSE" | jq -r '.success // false')
+          SUCCESS=$(echo "$BODY" | jq -r '.success // false')
           if [ "$SUCCESS" != "true" ]; then
             echo "  ❌ Data fetch failed"
             exit 0
@@ -93,37 +133,60 @@ jobs:
           
           echo "  ✅ Data fetched successfully"
           
-          DATA_PAYLOAD=$(echo "$DATA_RESPONSE" | jq -c '.data')
+          DATA_PAYLOAD=$(echo "$BODY" | jq -c '.data')
           
           echo "  🤖 Running prediction..."
           PRED_RESPONSE=$(curl -s -X POST "${{ env.API_BASE_URL }}/api/predict-crypto" \
             -H "Content-Type: application/json" \
-            -d "{\"symbol\":\"ETH/USDT\",\"data\":$DATA_PAYLOAD}")
+            --max-time 30 \
+            -w "\nHTTP_CODE:%{http_code}" \
+            --data-binary @- <<EOF
+{
+  "symbol": "ETH/USDT",
+  "data": $DATA_PAYLOAD
+}
+EOF
+          )
           
-          PRED_CLASS=$(echo "$PRED_RESPONSE" | jq -r '.class // "UNKNOWN"')
-          PRED_CONF=$(echo "$PRED_RESPONSE" | jq -r '.confidence // 0')
-          STORED=$(echo "$PRED_RESPONSE" | jq -r '.stored // false')
+          PRED_HTTP_CODE=$(echo "$PRED_RESPONSE" | grep "HTTP_CODE:" | cut -d: -f2)
+          PRED_BODY=$(echo "$PRED_RESPONSE" | sed '/HTTP_CODE:/d')
+          
+          if [ "$PRED_HTTP_CODE" != "200" ]; then
+            echo "  ❌ Prediction failed (HTTP $PRED_HTTP_CODE)"
+            exit 0
+          fi
+          
+          PRED_CLASS=$(echo "$PRED_BODY" | jq -r '.class // "UNKNOWN"')
+          PRED_CONF=$(echo "$PRED_BODY" | jq -r '.confidence // 0')
+          STORED=$(echo "$PRED_BODY" | jq -r '.stored // false')
           
           echo "  ✅ Prediction: $PRED_CLASS (Confidence: $PRED_CONF)"
           echo "  💾 Stored: $STORED"
       
+      # ======================================================================
+      # Predict: SOL/USDT
+      # ======================================================================
       - name: Predict SOL/USDT
+        continue-on-error: true
         run: |
           echo "🪙 Processing SOL/USDT..."
           
-          DATA_RESPONSE=$(curl -s "${{ env.API_BASE_URL }}/api/fetch-data?symbol=SOL%2FUSDT" --max-time 30)
+          DATA_RESPONSE=$(curl -s "${{ env.API_BASE_URL }}/api/fetch-data?symbol=SOL%2FUSDT" --max-time 30 -w "\nHTTP_CODE:%{http_code}")
           
-          if [ $? -ne 0 ]; then
-            echo "  ❌ Failed to fetch data"
+          HTTP_CODE=$(echo "$DATA_RESPONSE" | grep "HTTP_CODE:" | cut -d: -f2)
+          BODY=$(echo "$DATA_RESPONSE" | sed '/HTTP_CODE:/d')
+          
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "  ❌ Failed to fetch data (HTTP $HTTP_CODE)"
             exit 0
           fi
           
-          echo "$DATA_RESPONSE" | jq empty 2>/dev/null || {
+          if ! echo "$BODY" | jq empty 2>/dev/null; then
             echo "  ❌ Invalid JSON response"
             exit 0
-          }
+          fi
           
-          SUCCESS=$(echo "$DATA_RESPONSE" | jq -r '.success // false')
+          SUCCESS=$(echo "$BODY" | jq -r '.success // false')
           if [ "$SUCCESS" != "true" ]; then
             echo "  ❌ Data fetch failed"
             exit 0
@@ -131,37 +194,60 @@ jobs:
           
           echo "  ✅ Data fetched successfully"
           
-          DATA_PAYLOAD=$(echo "$DATA_RESPONSE" | jq -c '.data')
+          DATA_PAYLOAD=$(echo "$BODY" | jq -c '.data')
           
           echo "  🤖 Running prediction..."
           PRED_RESPONSE=$(curl -s -X POST "${{ env.API_BASE_URL }}/api/predict-crypto" \
             -H "Content-Type: application/json" \
-            -d "{\"symbol\":\"SOL/USDT\",\"data\":$DATA_PAYLOAD}")
+            --max-time 30 \
+            -w "\nHTTP_CODE:%{http_code}" \
+            --data-binary @- <<EOF
+{
+  "symbol": "SOL/USDT",
+  "data": $DATA_PAYLOAD
+}
+EOF
+          )
           
-          PRED_CLASS=$(echo "$PRED_RESPONSE" | jq -r '.class // "UNKNOWN"')
-          PRED_CONF=$(echo "$PRED_RESPONSE" | jq -r '.confidence // 0')
-          STORED=$(echo "$PRED_RESPONSE" | jq -r '.stored // false')
+          PRED_HTTP_CODE=$(echo "$PRED_RESPONSE" | grep "HTTP_CODE:" | cut -d: -f2)
+          PRED_BODY=$(echo "$PRED_RESPONSE" | sed '/HTTP_CODE:/d')
+          
+          if [ "$PRED_HTTP_CODE" != "200" ]; then
+            echo "  ❌ Prediction failed (HTTP $PRED_HTTP_CODE)"
+            exit 0
+          fi
+          
+          PRED_CLASS=$(echo "$PRED_BODY" | jq -r '.class // "UNKNOWN"')
+          PRED_CONF=$(echo "$PRED_BODY" | jq -r '.confidence // 0')
+          STORED=$(echo "$PRED_BODY" | jq -r '.stored // false')
           
           echo "  ✅ Prediction: $PRED_CLASS (Confidence: $PRED_CONF)"
           echo "  💾 Stored: $STORED"
       
+      # ======================================================================
+      # Predict: EURUSD
+      # ======================================================================
       - name: Predict EURUSD
+        continue-on-error: true
         run: |
           echo "💱 Processing EURUSD..."
           
-          DATA_RESPONSE=$(curl -s "${{ env.API_BASE_URL }}/api/fetch-data?symbol=EURUSD" --max-time 45)
+          DATA_RESPONSE=$(curl -s "${{ env.API_BASE_URL }}/api/fetch-data?symbol=EURUSD" --max-time 45 -w "\nHTTP_CODE:%{http_code}")
           
-          if [ $? -ne 0 ]; then
-            echo "  ❌ Failed to fetch data"
+          HTTP_CODE=$(echo "$DATA_RESPONSE" | grep "HTTP_CODE:" | cut -d: -f2)
+          BODY=$(echo "$DATA_RESPONSE" | sed '/HTTP_CODE:/d')
+          
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "  ❌ Failed to fetch data (HTTP $HTTP_CODE)"
             exit 0
           fi
           
-          echo "$DATA_RESPONSE" | jq empty 2>/dev/null || {
+          if ! echo "$BODY" | jq empty 2>/dev/null; then
             echo "  ❌ Invalid JSON response"
             exit 0
-          }
+          fi
           
-          SUCCESS=$(echo "$DATA_RESPONSE" | jq -r '.success // false')
+          SUCCESS=$(echo "$BODY" | jq -r '.success // false')
           if [ "$SUCCESS" != "true" ]; then
             echo "  ❌ Data fetch failed"
             exit 0
@@ -169,37 +255,60 @@ jobs:
           
           echo "  ✅ Data fetched successfully"
           
-          DATA_PAYLOAD=$(echo "$DATA_RESPONSE" | jq -c '.data')
+          DATA_PAYLOAD=$(echo "$BODY" | jq -c '.data')
           
           echo "  🤖 Running prediction..."
           PRED_RESPONSE=$(curl -s -X POST "${{ env.API_BASE_URL }}/api/predict-forex" \
             -H "Content-Type: application/json" \
-            -d "{\"pair\":\"EURUSD\",\"data\":$DATA_PAYLOAD}")
+            --max-time 30 \
+            -w "\nHTTP_CODE:%{http_code}" \
+            --data-binary @- <<EOF
+{
+  "pair": "EURUSD",
+  "data": $DATA_PAYLOAD
+}
+EOF
+          )
           
-          PRED_CLASS=$(echo "$PRED_RESPONSE" | jq -r '.class // "UNKNOWN"')
-          PRED_CONF=$(echo "$PRED_RESPONSE" | jq -r '.confidence // 0')
-          STORED=$(echo "$PRED_RESPONSE" | jq -r '.stored // false')
+          PRED_HTTP_CODE=$(echo "$PRED_RESPONSE" | grep "HTTP_CODE:" | cut -d: -f2)
+          PRED_BODY=$(echo "$PRED_RESPONSE" | sed '/HTTP_CODE:/d')
+          
+          if [ "$PRED_HTTP_CODE" != "200" ]; then
+            echo "  ❌ Prediction failed (HTTP $PRED_HTTP_CODE)"
+            exit 0
+          fi
+          
+          PRED_CLASS=$(echo "$PRED_BODY" | jq -r '.class // "UNKNOWN"')
+          PRED_CONF=$(echo "$PRED_BODY" | jq -r '.confidence // 0')
+          STORED=$(echo "$PRED_BODY" | jq -r '.stored // false')
           
           echo "  ✅ Prediction: $PRED_CLASS (Confidence: $PRED_CONF)"
           echo "  💾 Stored: $STORED"
       
+      # ======================================================================
+      # Predict: GBPUSD
+      # ======================================================================
       - name: Predict GBPUSD
+        continue-on-error: true
         run: |
           echo "💱 Processing GBPUSD..."
           
-          DATA_RESPONSE=$(curl -s "${{ env.API_BASE_URL }}/api/fetch-data?symbol=GBPUSD" --max-time 45)
+          DATA_RESPONSE=$(curl -s "${{ env.API_BASE_URL }}/api/fetch-data?symbol=GBPUSD" --max-time 45 -w "\nHTTP_CODE:%{http_code}")
           
-          if [ $? -ne 0 ]; then
-            echo "  ❌ Failed to fetch data"
+          HTTP_CODE=$(echo "$DATA_RESPONSE" | grep "HTTP_CODE:" | cut -d: -f2)
+          BODY=$(echo "$DATA_RESPONSE" | sed '/HTTP_CODE:/d')
+          
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "  ❌ Failed to fetch data (HTTP $HTTP_CODE)"
             exit 0
           fi
           
-          echo "$DATA_RESPONSE" | jq empty 2>/dev/null || {
+          if ! echo "$BODY" | jq empty 2>/dev/null; then
             echo "  ❌ Invalid JSON response"
             exit 0
-          }
+          fi
           
-          SUCCESS=$(echo "$DATA_RESPONSE" | jq -r '.success // false')
+          SUCCESS=$(echo "$BODY" | jq -r '.success // false')
           if [ "$SUCCESS" != "true" ]; then
             echo "  ❌ Data fetch failed"
             exit 0
@@ -207,34 +316,74 @@ jobs:
           
           echo "  ✅ Data fetched successfully"
           
-          DATA_PAYLOAD=$(echo "$DATA_RESPONSE" | jq -c '.data')
+          DATA_PAYLOAD=$(echo "$BODY" | jq -c '.data')
           
           echo "  🤖 Running prediction..."
           PRED_RESPONSE=$(curl -s -X POST "${{ env.API_BASE_URL }}/api/predict-forex" \
             -H "Content-Type: application/json" \
-            -d "{\"pair\":\"GBPUSD\",\"data\":$DATA_PAYLOAD}")
+            --max-time 30 \
+            -w "\nHTTP_CODE:%{http_code}" \
+            --data-binary @- <<EOF
+{
+  "pair": "GBPUSD",
+  "data": $DATA_PAYLOAD
+}
+EOF
+          )
           
-          PRED_CLASS=$(echo "$PRED_RESPONSE" | jq -r '.class // "UNKNOWN"')
-          PRED_CONF=$(echo "$PRED_RESPONSE" | jq -r '.confidence // 0')
-          STORED=$(echo "$PRED_RESPONSE" | jq -r '.stored // false')
+          PRED_HTTP_CODE=$(echo "$PRED_RESPONSE" | grep "HTTP_CODE:" | cut -d: -f2)
+          PRED_BODY=$(echo "$PRED_RESPONSE" | sed '/HTTP_CODE:/d')
+          
+          if [ "$PRED_HTTP_CODE" != "200" ]; then
+            echo "  ❌ Prediction failed (HTTP $PRED_HTTP_CODE)"
+            exit 0
+          fi
+          
+          PRED_CLASS=$(echo "$PRED_BODY" | jq -r '.class // "UNKNOWN"')
+          PRED_CONF=$(echo "$PRED_BODY" | jq -r '.confidence // 0')
+          STORED=$(echo "$PRED_BODY" | jq -r '.stored // false')
           
           echo "  ✅ Prediction: $PRED_CLASS (Confidence: $PRED_CONF)"
           echo "  💾 Stored: $STORED"
       
+      # ======================================================================
+      # Verification
+      # ======================================================================
       - name: Verify stored predictions
+        continue-on-error: true
         run: |
           echo "🔍 Checking database..."
           
-          VERIFY_RESPONSE=$(curl -s "${{ env.API_BASE_URL }}/api/get-predictions?limit=5")
+          VERIFY_RESPONSE=$(curl -s "${{ env.API_BASE_URL }}/api/get-predictions?limit=5" --max-time 10 -w "\nHTTP_CODE:%{http_code}")
           
-          TOTAL=$(echo "$VERIFY_RESPONSE" | jq -r '.pagination.total_count // 0')
+          # Extract HTTP code
+          HTTP_CODE=$(echo "$VERIFY_RESPONSE" | grep "HTTP_CODE:" | cut -d: -f2)
+          BODY=$(echo "$VERIFY_RESPONSE" | sed '/HTTP_CODE:/d')
           
-          echo "✅ Total predictions in database: $TOTAL"
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "⚠️  API returned HTTP $HTTP_CODE"
+            echo "Response preview:"
+            echo "$BODY" | head -c 300
+            exit 0
+          fi
           
-          if [ "$TOTAL" -gt 0 ]; then
-            echo ""
-            echo "📊 Latest predictions:"
-            echo "$VERIFY_RESPONSE" | jq -r '.data[] | "  - \(.symbol // .pair): \(.class) (\(.confidence * 100 | floor)%)"'
+          # Check if response is valid JSON
+          if echo "$BODY" | jq empty 2>/dev/null; then
+            TOTAL=$(echo "$BODY" | jq -r '.pagination.total_count // 0')
+            
+            echo "✅ Total predictions in database: $TOTAL"
+            
+            if [ "$TOTAL" -gt 0 ]; then
+              echo ""
+              echo "📊 Latest predictions:"
+              echo "$BODY" | jq -r '.data[] | "  - \(.symbol // .pair): \(.class) (\(.confidence * 100 | floor)%)"' 2>/dev/null || echo "  (Could not parse prediction details)"
+            else
+              echo "⚠️  No predictions found in database"
+            fi
+          else
+            echo "⚠️  Could not verify database (API returned invalid response)"
+            echo "Response preview (first 300 chars):"
+            echo "$BODY" | head -c 300
           fi
       
       - name: Summary
