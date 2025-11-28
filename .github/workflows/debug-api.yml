@@ -1,0 +1,171 @@
+name: Debug API Endpoints
+
+on:
+  workflow_dispatch:
+
+env:
+  API_BASE_URL: https://trading-models.vercel.app
+
+jobs:
+  test-endpoints:
+    name: Test All API Endpoints
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Test 1 - Health Check (get-predictions)
+        run: |
+          echo "=========================================="
+          echo "TEST 1: /api/get-predictions?health=true"
+          echo "=========================================="
+          
+          RESPONSE=$(curl -s "${{ env.API_BASE_URL }}/api/get-predictions?health=true" -w "\nHTTP_CODE:%{http_code}")
+          
+          HTTP_CODE=$(echo "$RESPONSE" | grep "HTTP_CODE:" | cut -d: -f2)
+          BODY=$(echo "$RESPONSE" | sed '/HTTP_CODE:/d')
+          
+          echo "HTTP Status: $HTTP_CODE"
+          echo ""
+          echo "Response Body:"
+          echo "$BODY" | jq . || echo "$BODY"
+          echo ""
+      
+      - name: Test 2 - Get Predictions (limit=1)
+        run: |
+          echo "=========================================="
+          echo "TEST 2: /api/get-predictions?limit=1"
+          echo "=========================================="
+          
+          RESPONSE=$(curl -s "${{ env.API_BASE_URL }}/api/get-predictions?limit=1" -w "\nHTTP_CODE:%{http_code}")
+          
+          HTTP_CODE=$(echo "$RESPONSE" | grep "HTTP_CODE:" | cut -d: -f2)
+          BODY=$(echo "$RESPONSE" | sed '/HTTP_CODE:/d')
+          
+          echo "HTTP Status: $HTTP_CODE"
+          echo ""
+          echo "Response Body:"
+          echo "$BODY" | jq . || echo "$BODY"
+          echo ""
+          
+          # Try to parse specific fields
+          if echo "$BODY" | jq empty 2>/dev/null; then
+            TOTAL=$(echo "$BODY" | jq -r '.pagination.total_count // "N/A"')
+            SUCCESS=$(echo "$BODY" | jq -r '.success // "N/A"')
+            DATA_COUNT=$(echo "$BODY" | jq -r '.data | length // 0')
+            
+            echo "Parsed values:"
+            echo "  - success: $SUCCESS"
+            echo "  - total_count: $TOTAL"
+            echo "  - data array length: $DATA_COUNT"
+          else
+            echo "⚠️  Response is not valid JSON"
+          fi
+          echo ""
+      
+      - name: Test 3 - Fetch Data Health
+        run: |
+          echo "=========================================="
+          echo "TEST 3: /api/fetch-data?health=true"
+          echo "=========================================="
+          
+          RESPONSE=$(curl -s "${{ env.API_BASE_URL }}/api/fetch-data?health=true" -w "\nHTTP_CODE:%{http_code}")
+          
+          HTTP_CODE=$(echo "$RESPONSE" | grep "HTTP_CODE:" | cut -d: -f2)
+          BODY=$(echo "$RESPONSE" | sed '/HTTP_CODE:/d')
+          
+          echo "HTTP Status: $HTTP_CODE"
+          echo ""
+          echo "Response Body:"
+          echo "$BODY" | jq . || echo "$BODY"
+          echo ""
+      
+      - name: Test 4 - Store Prediction Health
+        run: |
+          echo "=========================================="
+          echo "TEST 4: /api/store-prediction?health=true"
+          echo "=========================================="
+          
+          RESPONSE=$(curl -s "${{ env.API_BASE_URL }}/api/store-prediction?health=true" -w "\nHTTP_CODE:%{http_code}")
+          
+          HTTP_CODE=$(echo "$RESPONSE" | grep "HTTP_CODE:" | cut -d: -f2)
+          BODY=$(echo "$RESPONSE" | sed '/HTTP_CODE:/d')
+          
+          echo "HTTP Status: $HTTP_CODE"
+          echo ""
+          echo "Response Body:"
+          echo "$BODY" | jq . || echo "$BODY"
+          echo ""
+      
+      - name: Test 5 - Crypto Prediction Health
+        run: |
+          echo "=========================================="
+          echo "TEST 5: /api/predict-crypto?health=true"
+          echo "=========================================="
+          
+          RESPONSE=$(curl -s "${{ env.API_BASE_URL }}/api/predict-crypto?health=true" -w "\nHTTP_CODE:%{http_code}")
+          
+          HTTP_CODE=$(echo "$RESPONSE" | grep "HTTP_CODE:" | cut -d: -f2)
+          BODY=$(echo "$RESPONSE" | sed '/HTTP_CODE:/d')
+          
+          echo "HTTP Status: $HTTP_CODE"
+          echo ""
+          echo "Response Body:"
+          echo "$BODY" | jq . || echo "$BODY"
+          echo ""
+      
+      - name: Test 6 - MongoDB Direct Query
+        run: |
+          echo "=========================================="
+          echo "TEST 6: Count predictions via API"
+          echo "=========================================="
+          
+          # Try with include_stats
+          RESPONSE=$(curl -s "${{ env.API_BASE_URL }}/api/get-predictions?include_stats=true&limit=1" -w "\nHTTP_CODE:%{http_code}")
+          
+          HTTP_CODE=$(echo "$RESPONSE" | grep "HTTP_CODE:" | cut -d: -f2)
+          BODY=$(echo "$RESPONSE" | sed '/HTTP_CODE:/d')
+          
+          echo "HTTP Status: $HTTP_CODE"
+          echo ""
+          
+          if echo "$BODY" | jq empty 2>/dev/null; then
+            echo "✅ Valid JSON response"
+            
+            TOTAL=$(echo "$BODY" | jq -r '.pagination.total_count // 0')
+            echo ""
+            echo "Total predictions in database: $TOTAL"
+            
+            if [ "$TOTAL" -eq 0 ]; then
+              echo ""
+              echo "⚠️  DATABASE IS EMPTY!"
+              echo "This means predictions are not being stored."
+            else
+              echo ""
+              echo "✅ Database has predictions!"
+              echo ""
+              echo "Latest prediction:"
+              echo "$BODY" | jq -r '.data[0] | "  Symbol: \(.symbol // .pair)\n  Class: \(.class)\n  Confidence: \(.confidence)\n  Timestamp: \(.timestamp)"' || echo "  (Could not parse)"
+            fi
+          else
+            echo "❌ Invalid JSON response"
+            echo ""
+            echo "Raw response (first 500 chars):"
+            echo "$BODY" | head -c 500
+          fi
+          echo ""
+      
+      - name: Summary
+        if: always()
+        run: |
+          echo ""
+          echo "=========================================="
+          echo "🔍 DIAGNOSTIC SUMMARY"
+          echo "=========================================="
+          echo ""
+          echo "All endpoints tested. Review the logs above to identify issues."
+          echo ""
+          echo "Common issues:"
+          echo "  - HTTP 404: Endpoint doesn't exist (check vercel.json routing)"
+          echo "  - HTTP 500: Server error (check Vercel function logs)"
+          echo "  - Invalid JSON: Check api/*.js for syntax errors"
+          echo "  - Empty database: Predictions not being stored"
+          echo ""
