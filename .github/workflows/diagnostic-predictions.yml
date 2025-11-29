@@ -1,0 +1,252 @@
+name: Manual Predictions - DIAGNOSTIC VERSION
+
+on:
+  workflow_dispatch:
+    inputs:
+      symbols_to_predict:
+        description: 'Symbols (comma-separated, or leave empty for default)'
+        required: false
+        default: 'BTC/USDT,ETH/USDT'
+
+env:
+  API_BASE_URL: ${{ secrets.VERCEL_DEPLOYMENT_URL || 'https://trading-models.vercel.app' }}
+
+jobs:
+  # ============================================================================
+  # DIAGNOSTIC: Test All Endpoints First
+  # ============================================================================
+  test-endpoints:
+    name: Test API Endpoints
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Test Health Checks
+        run: |
+          echo "🔍 Testing all health endpoints..."
+          echo ""
+          
+          echo "1️⃣ Testing store-prediction health..."
+          curl -v "${{ env.API_BASE_URL }}/api/store-prediction?health=true" 2>&1 | head -30
+          echo ""
+          
+          echo "2️⃣ Testing get-predictions health..."
+          curl -v "${{ env.API_BASE_URL }}/api/get-predictions?health=true" 2>&1 | head -30
+          echo ""
+          
+          echo "3️⃣ Testing fetch-data (BTC/USDT)..."
+          RESPONSE=$(curl -v "${{ env.API_BASE_URL }}/api/fetch-data?symbol=BTC%2FUSDT" 2>&1)
+          echo "$RESPONSE" | head -50
+          echo ""
+          
+          # Check if we got JSON or HTML
+          if echo "$RESPONSE" | grep -q "<!DOCTYPE\|<html"; then
+            echo "❌ PROBLEM: Received HTML instead of JSON"
+            echo "This usually means:"
+            echo "  - 404 Not Found (wrong route)"
+            echo "  - 500 Server Error (check Vercel logs)"
+            echo "  - Vercel routing misconfigured"
+          elif echo "$RESPONSE" | grep -q '"success"'; then
+            echo "✅ Received valid JSON response"
+          else
+            echo "⚠️ Received non-HTML, non-JSON response"
+          fi
+      
+      - name: Test Vercel Routing
+        run: |
+          echo "🔍 Testing Vercel routing configuration..."
+          echo ""
+          
+          # Test if routes are properly configured
+          echo "Testing root:"
+          curl -I "${{ env.API_BASE_URL }}/" 2>&1 | grep -E "HTTP|Location"
+          echo ""
+          
+          echo "Testing /api/ endpoints:"
+          for endpoint in fetch-data get-predictions store-prediction predict-crypto predict-forex; do
+            echo "  - /api/$endpoint"
+            curl -I "${{ env.API_BASE_URL }}/api/$endpoint" 2>&1 | grep "HTTP" || echo "    ❌ Failed"
+          done
+
+  # ============================================================================
+  # RUN PREDICTIONS (with full error visibility)
+  # ============================================================================
+  run-predictions:
+    name: Generate Predictions
+    runs-on: ubuntu-latest
+    needs: test-endpoints
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+      
+      - name: Predict BTC/USDT (FULL DEBUG)
+        continue-on-error: true
+        run: |
+          echo "🪙 Processing BTC/USDT with FULL ERROR VISIBILITY..."
+          echo ""
+          
+          # ================================================================
+          # STEP 1: Fetch Data (with full response capture)
+          # ================================================================
+          echo "📥 Fetching market data..."
+          
+          FETCH_URL="${{ env.API_BASE_URL }}/api/fetch-data?symbol=BTC%2FUSDT"
+          echo "URL: $FETCH_URL"
+          echo ""
+          
+          # Use curl with verbose output
+          FETCH_RESPONSE=$(curl -v "$FETCH_URL" --max-time 30 2>&1)
+          
+          echo "=== FULL RESPONSE START ==="
+          echo "$FETCH_RESPONSE"
+          echo "=== FULL RESPONSE END ==="
+          echo ""
+          
+          # Extract HTTP status
+          HTTP_STATUS=$(echo "$FETCH_RESPONSE" | grep -oP "< HTTP/\d\.\d \K\d+")
+          echo "HTTP Status: $HTTP_STATUS"
+          
+          # Extract response body
+          BODY=$(echo "$FETCH_RESPONSE" | sed -n '/^{/,/^}/p')
+          
+          if [ -z "$BODY" ]; then
+            echo "❌ No JSON body found in response"
+            echo ""
+            echo "Possible causes:"
+            echo "  1. Vercel function timeout (check Vercel logs)"
+            echo "  2. Binance API blocking GitHub Actions IPs"
+            echo "  3. Data fetcher crashed (check error logs)"
+            echo ""
+            
+            # Show what we actually got
+            echo "Raw response (first 500 chars):"
+            echo "$FETCH_RESPONSE" | head -c 500
+            exit 1
+          fi
+          
+          echo "Response body (first 300 chars):"
+          echo "$BODY" | head -c 300
+          echo ""
+          
+          # ================================================================
+          # STEP 2: Validate JSON
+          # ================================================================
+          if ! echo "$BODY" | jq empty 2>/dev/null; then
+            echo "❌ Invalid JSON response"
+            echo ""
+            echo "Full response:"
+            echo "$BODY"
+            exit 1
+          fi
+          
+          echo "✅ Valid JSON received"
+          
+          # ================================================================
+          # STEP 3: Check success status
+          # ================================================================
+          SUCCESS=$(echo "$BODY" | jq -r '.success // false')
+          
+          if [ "$SUCCESS" != "true" ]; then
+            echo "❌ API returned success=false"
+            ERROR=$(echo "$BODY" | jq -r '.error // "Unknown error"')
+            echo "Error: $ERROR"
+            echo ""
+            echo "Full error response:"
+            echo "$BODY" | jq '.'
+            exit 1
+          fi
+          
+          echo "✅ Data fetch successful"
+          
+          # ================================================================
+          # STEP 4: Extract data
+          # ================================================================
+          DATA_PAYLOAD=$(echo "$BODY" | jq -c '.data')
+          DATA_POINTS=$(echo "$BODY" | jq -r '.dataPoints // 0')
+          
+          echo "Data points: $DATA_POINTS"
+          
+          if [ "$DATA_PAYLOAD" = "null" ] || [ "$DATA_PAYLOAD" = "{}" ]; then
+            echo "❌ No data in response"
+            exit 1
+          fi
+          
+          # ================================================================
+          # STEP 5: Run Prediction
+          # ================================================================
+          echo ""
+          echo "🤖 Running prediction..."
+          
+          PRED_RESPONSE=$(curl -v -X POST "${{ env.API_BASE_URL }}/api/predict-crypto" \
+            -H "Content-Type: application/json" \
+            --max-time 45 \
+            -d "{\"symbol\":\"BTC/USDT\",\"data\":$DATA_PAYLOAD}" 2>&1)
+          
+          echo "=== PREDICTION RESPONSE START ==="
+          echo "$PRED_RESPONSE" | head -100
+          echo "=== PREDICTION RESPONSE END ==="
+          echo ""
+          
+          # Extract prediction response body
+          PRED_BODY=$(echo "$PRED_RESPONSE" | sed -n '/^{/,/^}/p')
+          
+          if [ -z "$PRED_BODY" ]; then
+            echo "❌ No prediction response body"
+            echo "This could mean:"
+            echo "  - Model loading failed (check Vercel memory limits)"
+            echo "  - Prediction timeout (models too large)"
+            echo "  - TensorFlow.js error"
+            exit 1
+          fi
+          
+          # Validate prediction JSON
+          if ! echo "$PRED_BODY" | jq empty 2>/dev/null; then
+            echo "❌ Invalid prediction JSON"
+            echo "Response:"
+            echo "$PRED_BODY"
+            exit 1
+          fi
+          
+          # Extract prediction results
+          PRED_SUCCESS=$(echo "$PRED_BODY" | jq -r '.success // false')
+          
+          if [ "$PRED_SUCCESS" != "true" ]; then
+            echo "❌ Prediction failed"
+            echo "Error: $(echo "$PRED_BODY" | jq -r '.error // "Unknown"')"
+            echo ""
+            echo "Full response:"
+            echo "$PRED_BODY" | jq '.'
+            exit 1
+          fi
+          
+          # Show results
+          PRED_CLASS=$(echo "$PRED_BODY" | jq -r '.class')
+          PRED_CONF=$(echo "$PRED_BODY" | jq -r '.confidence')
+          STORED=$(echo "$PRED_BODY" | jq -r '.stored // false')
+          
+          echo "✅ Prediction successful!"
+          echo "   Class: $PRED_CLASS"
+          echo "   Confidence: $(echo "$PRED_CONF * 100" | bc -l | cut -d. -f1)%"
+          echo "   Stored: $STORED"
+      
+      - name: Summary
+        if: always()
+        run: |
+          echo ""
+          echo "========================================================================"
+          echo "📊 DIAGNOSTIC RUN COMPLETE"
+          echo "========================================================================"
+          echo ""
+          echo "Review the logs above to identify the exact failure point"
+          echo ""
+          echo "Common issues:"
+          echo "  - 404: Wrong route (check vercel.json)"
+          echo "  - 500: Server error (check Vercel function logs)"
+          echo "  - Timeout: Function exceeded 10s limit"
+          echo "  - HTML response: Vercel error page"
+          echo ""
