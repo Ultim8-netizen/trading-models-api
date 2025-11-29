@@ -11,28 +11,28 @@
   },
   "routes": [
     {
-      "src": "/api/predict-crypto",
-      "dest": "/api/predict-crypto.js"
+      "source": "/api/predict-crypto",
+      "destination": "/api/predict-crypto.js"
     },
     {
-      "src": "/api/predict-forex",
-      "dest": "/api/predict-forex.js"
+      "source": "/api/predict-forex",
+      "destination": "/api/predict-forex.js"
     },
     {
-      "src": "/api/fetch-data",
-      "dest": "/api/data-orchestrator.js"
+      "source": "/api/fetch-data",
+      "destination": "/api/data-orchestrator.js"
     },
     {
-      "src": "/api/get-predictions",
-      "dest": "/api/get-predictions.js"
+      "source": "/api/get-predictions",
+      "destination": "/api/get-predictions.js"
     },
     {
-      "src": "/api/store-prediction",
-      "dest": "/api/store-prediction.js"
+      "source": "/api/store-prediction",
+      "destination": "/api/store-prediction.js"
     },
     {
-      "src": "/(.*)",
-      "dest": "/public/$1"
+      "source": "/(.*)",
+      "destination": "/public/index.html"
     }
   ],
   "headers": [
