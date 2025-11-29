@@ -13,6 +13,7 @@
  * - Statistics aggregation
  * - Detailed diagnostic logging
  * - Step-by-step execution tracking
+ * - Health check endpoint
  * 
  * Called by:
  * - predict-crypto.js
@@ -242,16 +243,200 @@ async function updateStatistics(db, assetClass, predictionClass) {
 }
 
 // ============================================================================
+// HEALTH CHECK HANDLER
+// ============================================================================
+
+/**
+ * Health check endpoint with detailed diagnostics
+ */
+async function handleHealthCheck(req, res) {
+  const startTime = Date.now();
+
+  console.log('\n');
+  console.log('═════════════════════════════════════════════════════════════════');
+  console.log('[Health] HEALTH CHECK REQUEST');
+  console.log('═════════════════════════════════════════════════════════════════');
+  console.log('[Health] Timestamp:', new Date().toISOString());
+
+  try {
+    // Connect to database
+    console.log('[Health] ─────────────────────────────────────────────────────────');
+    console.log('[Health] STEP 1: Connect to MongoDB');
+    
+    const dbStartTime = Date.now();
+    const db = await connectToDatabase();
+    const dbConnectTime = Date.now() - dbStartTime;
+
+    console.log('[Health] ✓ MongoDB connected');
+    console.log('[Health] Connection time:', dbConnectTime + 'ms');
+
+    // Check collections exist
+    console.log('[Health] ─────────────────────────────────────────────────────────');
+    console.log('[Health] STEP 2: Check collections');
+    
+    const collections = await db.listCollections().toArray();
+    console.log('[Health] Found', collections.length, 'collections');
+
+    const collectionNames = collections.map(c => c.name);
+    console.log('[Health] Collections:', collectionNames.join(', '));
+
+    const hasPredictions = collectionNames.includes(CONFIG.COLLECTIONS.predictions);
+    const hasCryptoStats = collectionNames.includes(CONFIG.COLLECTIONS.crypto_stats);
+    const hasForexStats = collectionNames.includes(CONFIG.COLLECTIONS.forex_stats);
+    const hasMetadata = collectionNames.includes(CONFIG.COLLECTIONS.metadata);
+
+    console.log('[Health] Predictions collection:', hasPredictions ? '✓' : '❌');
+    console.log('[Health] Crypto stats collection:', hasCryptoStats ? '✓' : '❌');
+    console.log('[Health] Forex stats collection:', hasForexStats ? '✓' : '❌');
+    console.log('[Health] Metadata collection:', hasMetadata ? '✓' : '❌');
+
+    if (!hasPredictions) {
+      console.error('[Health] ❌ Predictions collection not found!');
+      
+      return res.status(503).json({
+        status: 'unhealthy',
+        error: 'Predictions collection not found',
+        collections_found: collectionNames,
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    // Get statistics
+    console.log('[Health] ─────────────────────────────────────────────────────────');
+    console.log('[Health] STEP 3: Gather statistics');
+
+    const statsStartTime = Date.now();
+
+    const predictionCount = await db
+      .collection(CONFIG.COLLECTIONS.predictions)
+      .countDocuments();
+
+    const cryptoCount = await db
+      .collection(CONFIG.COLLECTIONS.predictions)
+      .countDocuments({ asset_class: 'crypto' });
+
+    const forexCount = await db
+      .collection(CONFIG.COLLECTIONS.predictions)
+      .countDocuments({ asset_class: 'forex' });
+
+    const latestPrediction = await db
+      .collection(CONFIG.COLLECTIONS.predictions)
+      .findOne({}, { sort: { timestamp: -1 } });
+
+    const oldestPrediction = await db
+      .collection(CONFIG.COLLECTIONS.predictions)
+      .findOne({}, { sort: { timestamp: 1 } });
+
+    // Get class distribution
+    const upCount = await db
+      .collection(CONFIG.COLLECTIONS.predictions)
+      .countDocuments({ class: 'UP' });
+
+    const neutralCount = await db
+      .collection(CONFIG.COLLECTIONS.predictions)
+      .countDocuments({ class: 'NEUTRAL' });
+
+    const downCount = await db
+      .collection(CONFIG.COLLECTIONS.predictions)
+      .countDocuments({ class: 'DOWN' });
+
+    const statsTime = Date.now() - statsStartTime;
+
+    console.log('[Health] ✓ Statistics gathered');
+    console.log('[Health] Stats time:', statsTime + 'ms');
+    console.log('[Health] Total predictions:', predictionCount);
+    console.log('[Health] Crypto predictions:', cryptoCount);
+    console.log('[Health] Forex predictions:', forexCount);
+    console.log('[Health] UP predictions:', upCount);
+    console.log('[Health] NEUTRAL predictions:', neutralCount);
+    console.log('[Health] DOWN predictions:', downCount);
+
+    const elapsed = Date.now() - startTime;
+
+    console.log('═════════════════════════════════════════════════════════════════');
+    console.log('[Health] ✓ HEALTH CHECK COMPLETE');
+    console.log('═════════════════════════════════════════════════════════════════');
+    console.log('[Health] Status: HEALTHY ✓');
+    console.log('[Health] Total time:', elapsed + 'ms');
+    console.log('═════════════════════════════════════════════════════════════════');
+    console.log('\n');
+
+    return res.status(200).json({
+      status: 'healthy',
+      service: 'store-prediction',
+      database: {
+        status: 'connected',
+        connection_time_ms: dbConnectTime
+      },
+      collections: {
+        predictions: hasPredictions,
+        crypto_stats: hasCryptoStats,
+        forex_stats: hasForexStats,
+        metadata: hasMetadata
+      },
+      statistics: {
+        total_predictions: predictionCount,
+        crypto_predictions: cryptoCount,
+        forex_predictions: forexCount,
+        distribution: {
+          up: upCount,
+          neutral: neutralCount,
+          down: downCount
+        }
+      },
+      latest_prediction: latestPrediction ? {
+        timestamp: latestPrediction.timestamp.toISOString(),
+        asset_class: latestPrediction.asset_class,
+        symbol: latestPrediction.symbol || latestPrediction.pair,
+        class: latestPrediction.class
+      } : null,
+      oldest_prediction: oldestPrediction ? {
+        timestamp: oldestPrediction.timestamp.toISOString()
+      } : null,
+      performance: {
+        db_connect_ms: dbConnectTime,
+        stats_gather_ms: statsTime,
+        total_ms: elapsed
+      },
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    const elapsed = Date.now() - startTime;
+
+    console.error('═════════════════════════════════════════════════════════════════');
+    console.error('[Health] ❌ HEALTH CHECK FAILED');
+    console.error('═════════════════════════════════════════════════════════════════');
+    console.error('[Health] Error after:', elapsed + 'ms');
+    console.error('[Health] Error type:', error.constructor.name);
+    console.error('[Health] Error message:', error.message);
+    console.error('[Health] Stack trace:');
+    console.error(error.stack);
+    console.error('═════════════════════════════════════════════════════════════════');
+    console.error('\n');
+
+    return res.status(503).json({
+      status: 'unhealthy',
+      error: error.message,
+      error_type: error.constructor.name,
+      elapsed_ms: elapsed,
+      timestamp: new Date().toISOString()
+    });
+  }
+}
+
+// ============================================================================
 // MAIN HANDLER
 // ============================================================================
 
 /**
  * Main API handler with comprehensive diagnostics
  * POST /api/store-prediction
+ * GET /api/store-prediction?health=true (health check)
  */
 module.exports = async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, GET, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
   if (req.method === 'OPTIONS') {
@@ -259,11 +444,18 @@ module.exports = async (req, res) => {
     return res.status(200).end();
   }
 
+  // CRITICAL: Handle health check BEFORE method validation
+  if (req.method === 'GET' && req.query && req.query.health === 'true') {
+    console.log('[Store] Health check request detected');
+    return handleHealthCheck(req, res);
+  }
+
+  // Now validate method for non-health-check requests
   if (req.method !== 'POST') {
     console.log('[Store] ❌ Invalid method:', req.method);
     return res.status(405).json({
       success: false,
-      error: 'Method not allowed. Use POST.'
+      error: 'Method not allowed. Use POST for storage or GET with ?health=true for health check.'
     });
   }
 
@@ -305,7 +497,6 @@ module.exports = async (req, res) => {
       });
     }
     console.log('[Store] ✓ Validation passed');
-
     // Connect to database
     console.log('[Store] ─────────────────────────────────────────────────────────');
     console.log('[Store] STEP 3: Connect to MongoDB');
@@ -468,6 +659,7 @@ module.exports = async (req, res) => {
     });
   }
 };
+
 // ============================================================================
 // BATCH STORAGE (OPTIONAL)
 // ============================================================================
@@ -696,194 +888,6 @@ module.exports.batch = async (req, res) => {
       error: error.message,
       error_type: error.constructor.name,
       batch_id: batchId,
-      elapsed_ms: elapsed,
-      timestamp: new Date().toISOString()
-    });
-  }
-};
-
-// ============================================================================
-// HEALTH CHECK
-// ============================================================================
-
-/**
- * Health check endpoint with detailed diagnostics
- * GET /api/store-prediction?health=true
- */
-module.exports.health = async (req, res) => {
-  if (req.query.health !== 'true') {
-    return res.status(404).end();
-  }
-
-  const startTime = Date.now();
-
-  console.log('\n');
-  console.log('═════════════════════════════════════════════════════════════════');
-  console.log('[Health] HEALTH CHECK REQUEST');
-  console.log('═════════════════════════════════════════════════════════════════');
-  console.log('[Health] Timestamp:', new Date().toISOString());
-
-  try {
-    // Connect to database
-    console.log('[Health] ─────────────────────────────────────────────────────────');
-    console.log('[Health] STEP 1: Connect to MongoDB');
-    
-    const dbStartTime = Date.now();
-    const db = await connectToDatabase();
-    const dbConnectTime = Date.now() - dbStartTime;
-
-    console.log('[Health] ✓ MongoDB connected');
-    console.log('[Health] Connection time:', dbConnectTime + 'ms');
-
-    // Check collections exist
-    console.log('[Health] ─────────────────────────────────────────────────────────');
-    console.log('[Health] STEP 2: Check collections');
-    
-    const collections = await db.listCollections().toArray();
-    console.log('[Health] Found', collections.length, 'collections');
-
-    const collectionNames = collections.map(c => c.name);
-    console.log('[Health] Collections:', collectionNames.join(', '));
-
-    const hasPredictions = collectionNames.includes(CONFIG.COLLECTIONS.predictions);
-    const hasCryptoStats = collectionNames.includes(CONFIG.COLLECTIONS.crypto_stats);
-    const hasForexStats = collectionNames.includes(CONFIG.COLLECTIONS.forex_stats);
-    const hasMetadata = collectionNames.includes(CONFIG.COLLECTIONS.metadata);
-
-    console.log('[Health] Predictions collection:', hasPredictions ? '✓' : '❌');
-    console.log('[Health] Crypto stats collection:', hasCryptoStats ? '✓' : '❌');
-    console.log('[Health] Forex stats collection:', hasForexStats ? '✓' : '❌');
-    console.log('[Health] Metadata collection:', hasMetadata ? '✓' : '❌');
-
-    if (!hasPredictions) {
-      console.error('[Health] ❌ Predictions collection not found!');
-      
-      return res.status(503).json({
-        status: 'unhealthy',
-        error: 'Predictions collection not found',
-        collections_found: collectionNames,
-        timestamp: new Date().toISOString()
-      });
-    }
-
-    // Get statistics
-    console.log('[Health] ─────────────────────────────────────────────────────────');
-    console.log('[Health] STEP 3: Gather statistics');
-
-    const statsStartTime = Date.now();
-
-    const predictionCount = await db
-      .collection(CONFIG.COLLECTIONS.predictions)
-      .countDocuments();
-
-    const cryptoCount = await db
-      .collection(CONFIG.COLLECTIONS.predictions)
-      .countDocuments({ asset_class: 'crypto' });
-
-    const forexCount = await db
-      .collection(CONFIG.COLLECTIONS.predictions)
-      .countDocuments({ asset_class: 'forex' });
-
-    const latestPrediction = await db
-      .collection(CONFIG.COLLECTIONS.predictions)
-      .findOne({}, { sort: { timestamp: -1 } });
-
-    const oldestPrediction = await db
-      .collection(CONFIG.COLLECTIONS.predictions)
-      .findOne({}, { sort: { timestamp: 1 } });
-
-    // Get class distribution
-    const upCount = await db
-      .collection(CONFIG.COLLECTIONS.predictions)
-      .countDocuments({ class: 'UP' });
-
-    const neutralCount = await db
-      .collection(CONFIG.COLLECTIONS.predictions)
-      .countDocuments({ class: 'NEUTRAL' });
-
-    const downCount = await db
-      .collection(CONFIG.COLLECTIONS.predictions)
-      .countDocuments({ class: 'DOWN' });
-
-    const statsTime = Date.now() - statsStartTime;
-
-    console.log('[Health] ✓ Statistics gathered');
-    console.log('[Health] Stats time:', statsTime + 'ms');
-    console.log('[Health] Total predictions:', predictionCount);
-    console.log('[Health] Crypto predictions:', cryptoCount);
-    console.log('[Health] Forex predictions:', forexCount);
-    console.log('[Health] UP predictions:', upCount);
-    console.log('[Health] NEUTRAL predictions:', neutralCount);
-    console.log('[Health] DOWN predictions:', downCount);
-
-    const elapsed = Date.now() - startTime;
-
-    console.log('═════════════════════════════════════════════════════════════════');
-    console.log('[Health] ✓ HEALTH CHECK COMPLETE');
-    console.log('═════════════════════════════════════════════════════════════════');
-    console.log('[Health] Status: HEALTHY ✓');
-    console.log('[Health] Total time:', elapsed + 'ms');
-    console.log('═════════════════════════════════════════════════════════════════');
-    console.log('\n');
-
-    return res.status(200).json({
-      status: 'healthy',
-      service: 'store-prediction',
-      database: {
-        status: 'connected',
-        connection_time_ms: dbConnectTime
-      },
-      collections: {
-        predictions: hasPredictions,
-        crypto_stats: hasCryptoStats,
-        forex_stats: hasForexStats,
-        metadata: hasMetadata
-      },
-      statistics: {
-        total_predictions: predictionCount,
-        crypto_predictions: cryptoCount,
-        forex_predictions: forexCount,
-        distribution: {
-          up: upCount,
-          neutral: neutralCount,
-          down: downCount
-        }
-      },
-      latest_prediction: latestPrediction ? {
-        timestamp: latestPrediction.timestamp.toISOString(),
-        asset_class: latestPrediction.asset_class,
-        symbol: latestPrediction.symbol || latestPrediction.pair,
-        class: latestPrediction.class
-      } : null,
-      oldest_prediction: oldestPrediction ? {
-        timestamp: oldestPrediction.timestamp.toISOString()
-      } : null,
-      performance: {
-        db_connect_ms: dbConnectTime,
-        stats_gather_ms: statsTime,
-        total_ms: elapsed
-      },
-      timestamp: new Date().toISOString()
-    });
-
-  } catch (error) {
-    const elapsed = Date.now() - startTime;
-
-    console.error('═════════════════════════════════════════════════════════════════');
-    console.error('[Health] ❌ HEALTH CHECK FAILED');
-    console.error('═════════════════════════════════════════════════════════════════');
-    console.error('[Health] Error after:', elapsed + 'ms');
-    console.error('[Health] Error type:', error.constructor.name);
-    console.error('[Health] Error message:', error.message);
-    console.error('[Health] Stack trace:');
-    console.error(error.stack);
-    console.error('═════════════════════════════════════════════════════════════════');
-    console.error('\n');
-
-    return res.status(503).json({
-      status: 'unhealthy',
-      error: error.message,
-      error_type: error.constructor.name,
       elapsed_ms: elapsed,
       timestamp: new Date().toISOString()
     });
