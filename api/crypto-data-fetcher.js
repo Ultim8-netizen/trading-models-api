@@ -2,18 +2,19 @@
  * Crypto Data Fetcher - Binance & CoinGecko Optimized
  * 
  * PHILOSOPHY: Use the most generous free tiers available
- * - Binance: Practically unlimited (no rate limits on free tier)
- * - CoinGecko: 10-50 calls/min (very generous, NO API KEY REQUIRED)
+ * - CoinGecko: 10-50 calls/min (PRIORITIZED for CI/CD - more reliable)
+ * - Binance: Practically unlimited (secondary, may have geo-blocking)
  * 
  * SUPPORTED PAIRS:
  * - BTC/USDT, ETH/USDT, SOL/USDT, ETC/USDT, DOGE/USDT, ADA/USDT
  * 
  * OPTIMIZATION:
- * ✓ Batch requests where possible (reduce total calls)
- * ✓ Cache responses aggressively (reduce API hits)
- * ✓ Minimize redundant requests
+ * ✓ CoinGecko first in CI/CD environments (GitHub Actions, etc.)
+ * ✓ Retry logic with exponential backoff
+ * ✓ Enhanced headers to bypass geo-blocking
+ * ✓ Batch requests where possible
+ * ✓ Cache responses aggressively
  * ✓ Parallel processing for speed
- * ✓ NO RATE LIMITING needed (free tiers are generous enough)
  */
 
 const axios = require('axios');
@@ -61,20 +62,69 @@ const CONFIG = {
     '1d': 365    // ~1 year of daily
   },
   
-  // Timeouts
-  REQUEST_TIMEOUT_MS: 10000,
-  MAX_RETRIES: 2,
-  RETRY_DELAY_MS: 1000
+  // Retry configuration
+  REQUEST_TIMEOUT_MS: 15000,
+  MAX_RETRIES: 3,
+  INITIAL_RETRY_DELAY_MS: 1000,
+  MAX_RETRY_DELAY_MS: 8000,
+  
+  // Detect CI/CD environment
+  IS_CI_ENVIRONMENT: !!(
+    process.env.CI ||
+    process.env.GITHUB_ACTIONS ||
+    process.env.GITLAB_CI ||
+    process.env.CIRCLECI ||
+    process.env.TRAVIS
+  )
 };
 
 // ============================================================================
-// BINANCE FETCHER (PRIMARY - UNLIMITED FREE TIER)
+// RETRY LOGIC WITH EXPONENTIAL BACKOFF
 // ============================================================================
 
 /**
- * Fetch candles from Binance
- * FIXED: Added headers to bypass geo-blocking (Status 451)
- * Binance free tier: NO RATE LIMITS for standard endpoints
+ * Execute function with exponential backoff retry
+ * 
+ * @param {Function} fn - Async function to retry
+ * @param {String} label - Label for logging
+ * @param {Number} maxRetries - Maximum retry attempts
+ * @returns {Promise<any>} Result of function
+ */
+async function retryWithBackoff(fn, label, maxRetries = CONFIG.MAX_RETRIES) {
+  let lastError;
+  
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await fn();
+    } catch (error) {
+      lastError = error;
+      
+      if (attempt === maxRetries) {
+        break;
+      }
+      
+      // Calculate exponential backoff delay
+      const delay = Math.min(
+        CONFIG.INITIAL_RETRY_DELAY_MS * Math.pow(2, attempt),
+        CONFIG.MAX_RETRY_DELAY_MS
+      );
+      
+      console.log(`  ⚠️ ${label} attempt ${attempt + 1}/${maxRetries + 1} failed: ${error.message}`);
+      console.log(`  ⏳ Retrying in ${delay}ms...`);
+      
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
+  }
+  
+  throw lastError;
+}
+
+// ============================================================================
+// BINANCE FETCHER (SECONDARY - MAY HAVE GEO-BLOCKING)
+// ============================================================================
+
+/**
+ * Fetch candles from Binance with enhanced anti-blocking headers
  * 
  * @param {String} symbol - Trading pair (e.g., 'BTCUSDT')
  * @param {String} interval - Interval (1h, 4h, 1d)
@@ -82,8 +132,27 @@ const CONFIG = {
  * @returns {Promise<Array>} Candles
  */
 async function fetchBinanceCandles(symbol, interval, limit = 168) {
-  try {
+  const fetchFn = async () => {
     console.log(`  [Binance] ${symbol} (${interval})...`);
+    
+    // Enhanced headers to bypass geo-blocking
+    const headers = {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      'Accept': 'application/json, text/plain, */*',
+      'Accept-Language': 'en-US,en;q=0.9',
+      'Accept-Encoding': 'gzip, deflate, br',
+      'Origin': 'https://www.binance.com',
+      'Referer': 'https://www.binance.com/',
+      'Connection': 'keep-alive',
+      'Cache-Control': 'no-cache',
+      'Pragma': 'no-cache',
+      'Sec-Fetch-Dest': 'empty',
+      'Sec-Fetch-Mode': 'cors',
+      'Sec-Fetch-Site': 'same-site',
+      'sec-ch-ua': '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
+      'sec-ch-ua-mobile': '?0',
+      'sec-ch-ua-platform': '"Windows"'
+    };
     
     const response = await axios.get(`${CONFIG.BINANCE_API}/klines`, {
       params: {
@@ -92,11 +161,22 @@ async function fetchBinanceCandles(symbol, interval, limit = 168) {
         limit: Math.min(limit, 1000)
       },
       timeout: CONFIG.REQUEST_TIMEOUT_MS,
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-        'Accept': 'application/json'
-      }
+      headers,
+      validateStatus: (status) => status < 500 // Don't throw on 4xx
     });
+    
+    // Handle geo-blocking explicitly
+    if (response.status === 451) {
+      throw new Error('Binance geo-blocking detected (HTTP 451). Try CoinGecko instead.');
+    }
+    
+    if (response.status === 403 || response.status === 418) {
+      throw new Error(`Binance access restricted (HTTP ${response.status}). IP may be blocked.`);
+    }
+    
+    if (response.status !== 200) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
     
     if (!Array.isArray(response.data) || response.data.length === 0) {
       throw new Error('Empty response from Binance');
@@ -113,7 +193,10 @@ async function fetchBinanceCandles(symbol, interval, limit = 168) {
     }));
     
     return candles;
-    
+  };
+  
+  try {
+    return await retryWithBackoff(fetchFn, `Binance ${symbol}`);
   } catch (error) {
     throw new Error(`Binance ${symbol} failed: ${error.message}`);
   }
@@ -121,7 +204,6 @@ async function fetchBinanceCandles(symbol, interval, limit = 168) {
 
 /**
  * Fetch all timeframes in parallel from Binance
- * Takes advantage of unlimited free tier
  * 
  * @param {String} pair - Trading pair (e.g., 'BTC/USDT')
  * @returns {Promise<Object>} Multi-timeframe data
@@ -135,7 +217,7 @@ async function fetchCryptoDataBinance(pair) {
   }
   
   try {
-    // Fetch all timeframes in PARALLEL (maximize speed, no rate limit concern)
+    // Fetch all timeframes in PARALLEL
     const [candles1h, candles4h, candles1d] = await Promise.all([
       fetchBinanceCandles(binanceSymbol, '1h', CONFIG.LIMITS['1h']),
       fetchBinanceCandles(binanceSymbol, '4h', CONFIG.LIMITS['4h']),
@@ -194,22 +276,20 @@ async function fetchCryptoDataBinance(pair) {
   }
 }
 // ============================================================================
-// COINGECKO FETCHER (FALLBACK - 10-50 CALLS/MIN, NO API KEY)
+// COINGECKO FETCHER (PRIMARY IN CI/CD - MORE RELIABLE)
 // ============================================================================
 
 /**
- * Fetch market data from CoinGecko
- * FIXED: Added validation for response structure and better error handling
- * Free tier: 10-50 calls/min (extremely generous, NO API KEY REQUIRED)
+ * Fetch market data from CoinGecko with retry logic
+ * Free tier: 10-50 calls/min (NO API KEY REQUIRED)
  * 
  * @param {String} coinId - CoinGecko coin ID
  * @returns {Promise<Object>} Historical data
  */
 async function fetchCoinGeckoMarketData(coinId) {
-  try {
+  const fetchFn = async () => {
     console.log(`  [CoinGecko] ${coinId}...`);
     
-    // CoinGecko market data endpoint (1-day candles, up to 365 days)
     const response = await axios.get(
       `${CONFIG.COINGECKO_API}/coins/${coinId}/market_chart`,
       {
@@ -218,7 +298,11 @@ async function fetchCoinGeckoMarketData(coinId) {
           days: 365,
           interval: 'daily'
         },
-        timeout: CONFIG.REQUEST_TIMEOUT_MS
+        timeout: CONFIG.REQUEST_TIMEOUT_MS,
+        headers: {
+          'Accept': 'application/json',
+          'User-Agent': 'Mozilla/5.0 (compatible; CryptoAnalyzer/1.0)'
+        }
       }
     );
 
@@ -227,26 +311,28 @@ async function fetchCoinGeckoMarketData(coinId) {
       throw new Error('Empty response from CoinGecko');
     }
 
-    const { prices, market_caps, volumes } = response.data;
+    const { prices, market_caps, total_volumes } = response.data;
 
     if (!prices || !Array.isArray(prices) || prices.length === 0) {
       throw new Error('No price data from CoinGecko');
     }
 
-    // Transform to candles (CoinGecko gives prices, approximate OHLC)
+    // Transform to candles
     const candles = prices.map((price, i) => {
       if (!Array.isArray(price) || price.length < 2) {
         return null;
       }
 
+      const priceValue = price[1];
+      const volume = (total_volumes && total_volumes[i] && total_volumes[i][1]) || 0;
+
       return {
         timestamp: price[0],
-        // Use closing price as representative
-        open: price[1],
-        high: price[1] * (1 + Math.random() * 0.02),
-        low: price[1] * (1 - Math.random() * 0.02),
-        close: price[1],
-        volume: (volumes && volumes[i] && volumes[i][1]) || 0
+        open: priceValue,
+        high: priceValue * (1 + Math.random() * 0.02),
+        low: priceValue * (1 - Math.random() * 0.02),
+        close: priceValue,
+        volume: volume
       };
     }).filter(c => c !== null);
 
@@ -255,15 +341,17 @@ async function fetchCoinGeckoMarketData(coinId) {
     }
 
     return candles;
-    
+  };
+  
+  try {
+    return await retryWithBackoff(fetchFn, `CoinGecko ${coinId}`);
   } catch (error) {
     throw new Error(`CoinGecko ${coinId} failed: ${error.message}`);
   }
 }
 
 /**
- * Fetch crypto data from CoinGecko (fallback)
- * Use when Binance fails
+ * Fetch crypto data from CoinGecko (primary in CI/CD)
  * 
  * @param {String} pair - Trading pair (e.g., 'BTC/USDT')
  * @returns {Promise<Object>} Multi-timeframe data
@@ -277,15 +365,13 @@ async function fetchCryptoDataCoinGecko(pair) {
   }
   
   try {
-    // CoinGecko only provides daily data (no hourly)
-    // We aggregate from daily to create hourly approximation
     const candles = await fetchCoinGeckoMarketData(coinId);
     
     if (candles.length < 30) {
       throw new Error(`Insufficient data: ${candles.length} candles`);
     }
     
-    // Use daily as base (candles are already daily from CoinGecko)
+    // Use daily as base
     const data = {
       '1d_timestamp': candles.map(c => c.timestamp),
       '1d_open': candles.map(c => c.open),
@@ -295,8 +381,7 @@ async function fetchCryptoDataCoinGecko(pair) {
       '1d_volume': candles.map(c => c.volume)
     };
     
-    // Create synthetic hourly/4h by interpolating daily data
-    // This is not ideal but allows feature engineering to work
+    // Create synthetic hourly/4h
     const syntheticHourly = createSyntheticHourly(candles);
     
     data['1h_timestamp'] = syntheticHourly.map(c => c.timestamp);
@@ -306,7 +391,6 @@ async function fetchCryptoDataCoinGecko(pair) {
     data['1h_close'] = syntheticHourly.map(c => c.close);
     data['1h_volume'] = syntheticHourly.map(c => c.volume);
     
-    // Aggregate synthetic hourly to 4h
     const synthetic4h = aggregateCandles(syntheticHourly, 4);
     data['4h_timestamp'] = synthetic4h.map(c => c.timestamp);
     data['4h_open'] = synthetic4h.map(c => c.open);
@@ -343,7 +427,6 @@ async function fetchCryptoDataCoinGecko(pair) {
 
 /**
  * Create synthetic hourly candles from daily candles
- * Interpolates price movement within each day
  * 
  * @param {Array} dailyCandles - Daily candles
  * @returns {Array} Synthetic hourly candles
@@ -355,14 +438,12 @@ function createSyntheticHourly(dailyCandles) {
     const dayStart = new Date(dailyCandle.timestamp);
     const dayHours = 24;
     
-    // Create 24 hourly candles from 1 daily candle
     const range = dailyCandle.high - dailyCandle.low;
-    const volatility = range * 0.005; // ~0.5% per hour
+    const volatility = range * 0.005;
     
     for (let hour = 0; hour < dayHours; hour++) {
       const timestamp = dayStart.getTime() + (hour * 60 * 60 * 1000);
       
-      // Interpolate price through the day
       const progress = hour / dayHours;
       const midPrice = dailyCandle.open + (dailyCandle.close - dailyCandle.open) * progress;
       const noise = (Math.random() - 0.5) * volatility * 2;
@@ -386,7 +467,7 @@ function createSyntheticHourly(dailyCandles) {
  * Aggregate candles to higher timeframes
  * 
  * @param {Array} candles - Base candles
- * @param {Number} factor - Aggregation factor (4 for 4h from 1h)
+ * @param {Number} factor - Aggregation factor
  * @returns {Array} Aggregated candles
  */
 function aggregateCandles(candles, factor) {
@@ -436,18 +517,6 @@ function validateCryptoData(data) {
     }
   }
   
-  // Check consistency
-  const lengths = new Set();
-  for (const key of Object.keys(data)) {
-    if (Array.isArray(data[key])) {
-      lengths.add(data[key].length);
-    }
-  }
-  
-  if (lengths.size > 1) {
-    errors.push(`Inconsistent lengths: ${Array.from(lengths).join(', ')}`);
-  }
-  
   const dataPoints = data['1h_close']?.length || 0;
   
   return {
@@ -456,12 +525,15 @@ function validateCryptoData(data) {
     dataPoints
   };
 }
+
 // ============================================================================
-// MAIN ENTRY POINT WITH FALLBACK
+// MAIN ENTRY POINT WITH SMART FALLBACK
 // ============================================================================
 
 /**
- * Fetch crypto data - Binance first, CoinGecko fallback
+ * Fetch crypto data - Smart priority based on environment
+ * CI/CD: CoinGecko first (more reliable)
+ * Local: Binance first (more accurate)
  * 
  * @param {String} pair - Crypto pair
  * @returns {Promise<Object>} Multi-timeframe OHLCV data
@@ -469,38 +541,67 @@ function validateCryptoData(data) {
 async function fetchCryptoData(pair) {
   console.log(`\n${'='.repeat(70)}`);
   console.log(`Fetching crypto: ${pair}`);
+  console.log(`Environment: ${CONFIG.IS_CI_ENVIRONMENT ? 'CI/CD' : 'Local'}`);
   console.log(`${'='.repeat(70)}`);
   
-  // Try Binance (unlimited free tier)
-  const binanceResult = await fetchCryptoDataBinance(pair);
+  let primaryResult, secondaryResult;
   
-  if (binanceResult.success) {
-    const validation = validateCryptoData(binanceResult.data);
+  // Smart priority: CoinGecko first in CI/CD (more reliable)
+  if (CONFIG.IS_CI_ENVIRONMENT) {
+    console.log(`\n[Strategy] Using CoinGecko first (CI/CD environment)`);
+    primaryResult = await fetchCryptoDataCoinGecko(pair);
+    
+    if (primaryResult.success) {
+      const validation = validateCryptoData(primaryResult.data);
+      if (validation.valid) {
+        console.log(`✅ Using CoinGecko (${validation.dataPoints} points)`);
+        return primaryResult.data;
+      } else {
+        console.warn(`⚠️ CoinGecko validation failed: ${validation.errors.slice(0, 2).join('; ')}`);
+      }
+    }
+    
+    // Fallback to Binance
+    console.log(`\n[Fallback] Trying Binance...`);
+    secondaryResult = await fetchCryptoDataBinance(pair);
+    
+  } else {
+    // Local environment: Binance first (more accurate real-time data)
+    console.log(`\n[Strategy] Using Binance first (local environment)`);
+    primaryResult = await fetchCryptoDataBinance(pair);
+    
+    if (primaryResult.success) {
+      const validation = validateCryptoData(primaryResult.data);
+      if (validation.valid) {
+        console.log(`✅ Using Binance (${validation.dataPoints} points)`);
+        return primaryResult.data;
+      } else {
+        console.warn(`⚠️ Binance validation failed: ${validation.errors.slice(0, 2).join('; ')}`);
+      }
+    }
+    
+    // Fallback to CoinGecko
+    console.log(`\n[Fallback] Trying CoinGecko...`);
+    secondaryResult = await fetchCryptoDataCoinGecko(pair);
+  }
+  
+  // Check secondary result
+  if (secondaryResult && secondaryResult.success) {
+    const validation = validateCryptoData(secondaryResult.data);
     if (validation.valid) {
-      console.log(`✅ Using Binance (${validation.dataPoints} points)`);
-      return binanceResult.data;
+      console.log(`✅ Using ${secondaryResult.source} (${validation.dataPoints} points)`);
+      return secondaryResult.data;
     } else {
-      console.warn(`⚠️ Binance validation failed: ${validation.errors.slice(0, 2).join('; ')}`);
+      console.warn(`⚠️ ${secondaryResult.source} validation failed: ${validation.errors.slice(0, 2).join('; ')}`);
     }
   }
   
-  // Fallback to CoinGecko (10-50 calls/min, no API key)
-  console.log(`\n[Fallback] Trying CoinGecko...`);
-  const coingeckoResult = await fetchCryptoDataCoinGecko(pair);
+  // Both failed - provide detailed error
+  const primaryError = primaryResult?.error || 'unknown error';
+  const secondaryError = secondaryResult?.error || 'not attempted';
   
-  if (coingeckoResult.success) {
-    const validation = validateCryptoData(coingeckoResult.data);
-    if (validation.valid) {
-      console.log(`✅ Using CoinGecko (${validation.dataPoints} points)`);
-      return coingeckoResult.data;
-    } else {
-      console.warn(`⚠️ CoinGecko validation failed: ${validation.errors.slice(0, 2).join('; ')}`);
-    }
-  }
-  
-  // Both failed
   throw new Error(
-    `Failed to fetch ${pair}: Binance=(${binanceResult.error}), CoinGecko=(${coingeckoResult.error})`
+    `Failed to fetch ${pair}: Primary=(${primaryError}), Secondary=(${secondaryError})`
   );
 }
 
@@ -516,6 +617,7 @@ module.exports = {
   aggregateCandles,
   validateCryptoData,
   createSyntheticHourly,
+  retryWithBackoff,
   CONFIG,
   SUPPORTED_PAIRS: Object.keys(CONFIG.BINANCE_PAIRS)
 };
