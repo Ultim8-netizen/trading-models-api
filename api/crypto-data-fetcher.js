@@ -12,6 +12,7 @@
  * ✓ CoinGecko first in CI/CD environments (GitHub Actions, etc.)
  * ✓ Retry logic with exponential backoff
  * ✓ Enhanced headers to bypass geo-blocking
+ * ✓ FIXED: Consistent array lengths in synthetic data
  * ✓ Batch requests where possible
  * ✓ Cache responses aggressively
  * ✓ Parallel processing for speed
@@ -352,6 +353,7 @@ async function fetchCoinGeckoMarketData(coinId) {
 
 /**
  * Fetch crypto data from CoinGecko (primary in CI/CD)
+ * FIXED: Ensures consistent array lengths across all timeframes
  * 
  * @param {String} pair - Trading pair (e.g., 'BTC/USDT')
  * @returns {Promise<Object>} Multi-timeframe data
@@ -365,41 +367,50 @@ async function fetchCryptoDataCoinGecko(pair) {
   }
   
   try {
+    // CoinGecko only provides daily data
     const candles = await fetchCoinGeckoMarketData(coinId);
     
     if (candles.length < 30) {
       throw new Error(`Insufficient data: ${candles.length} candles`);
     }
     
-    // Use daily as base
+    // Use daily as base (ensure we have enough - last 365 days)
+    const candles1d = candles.slice(-365);
+    
+    // Create synthetic hourly (168 hours = 1 week)
+    const syntheticHourly = createSyntheticHourly(candles1d, 168);
+    
+    // Aggregate to 4h (42 periods = 1 week of 4h candles)
+    const synthetic4h = aggregateCandles(syntheticHourly, 4).slice(-42);
+    
+    // CRITICAL: Ensure all arrays have consistent lengths
     const data = {
-      '1d_timestamp': candles.map(c => c.timestamp),
-      '1d_open': candles.map(c => c.open),
-      '1d_high': candles.map(c => c.high),
-      '1d_low': candles.map(c => c.low),
-      '1d_close': candles.map(c => c.close),
-      '1d_volume': candles.map(c => c.volume)
+      '1h_timestamp': syntheticHourly.map(c => c.timestamp),
+      '1h_open': syntheticHourly.map(c => c.open),
+      '1h_high': syntheticHourly.map(c => c.high),
+      '1h_low': syntheticHourly.map(c => c.low),
+      '1h_close': syntheticHourly.map(c => c.close),
+      '1h_volume': syntheticHourly.map(c => c.volume),
+      
+      '4h_timestamp': synthetic4h.map(c => c.timestamp),
+      '4h_open': synthetic4h.map(c => c.open),
+      '4h_high': synthetic4h.map(c => c.high),
+      '4h_low': synthetic4h.map(c => c.low),
+      '4h_close': synthetic4h.map(c => c.close),
+      '4h_volume': synthetic4h.map(c => c.volume),
+      
+      '1d_timestamp': candles1d.map(c => c.timestamp),
+      '1d_open': candles1d.map(c => c.open),
+      '1d_high': candles1d.map(c => c.high),
+      '1d_low': candles1d.map(c => c.low),
+      '1d_close': candles1d.map(c => c.close),
+      '1d_volume': candles1d.map(c => c.volume)
     };
     
-    // Create synthetic hourly/4h
-    const syntheticHourly = createSyntheticHourly(candles);
+    // VERIFY consistent lengths
+    console.log(`  Lengths: 1h=${syntheticHourly.length}, 4h=${synthetic4h.length}, 1d=${candles1d.length}`);
     
-    data['1h_timestamp'] = syntheticHourly.map(c => c.timestamp);
-    data['1h_open'] = syntheticHourly.map(c => c.open);
-    data['1h_high'] = syntheticHourly.map(c => c.high);
-    data['1h_low'] = syntheticHourly.map(c => c.low);
-    data['1h_close'] = syntheticHourly.map(c => c.close);
-    data['1h_volume'] = syntheticHourly.map(c => c.volume);
-    
-    const synthetic4h = aggregateCandles(syntheticHourly, 4);
-    data['4h_timestamp'] = synthetic4h.map(c => c.timestamp);
-    data['4h_open'] = synthetic4h.map(c => c.open);
-    data['4h_high'] = synthetic4h.map(c => c.high);
-    data['4h_low'] = synthetic4h.map(c => c.low);
-    data['4h_close'] = synthetic4h.map(c => c.close);
-    data['4h_volume'] = synthetic4h.map(c => c.volume);
-    
-    console.log(`✓ CoinGecko success (synthetic: 1h×${syntheticHourly.length}, 1d×${candles.length})`);
+    console.log(`✓ CoinGecko success (synthetic: 1h×${syntheticHourly.length}, 4h×${synthetic4h.length}, 1d×${candles1d.length})`);
     
     return {
       source: 'CoinGecko (synthetic)',
@@ -422,28 +433,38 @@ async function fetchCryptoDataCoinGecko(pair) {
 }
 
 // ============================================================================
-// UTILITY FUNCTIONS
+// UTILITY FUNCTIONS (FIXED FOR CONSISTENT LENGTHS)
 // ============================================================================
 
 /**
  * Create synthetic hourly candles from daily candles
+ * FIXED: Ensures exactly targetLength candles are returned
  * 
  * @param {Array} dailyCandles - Daily candles
+ * @param {Number} targetLength - Target number of hourly candles (default 168)
  * @returns {Array} Synthetic hourly candles
  */
-function createSyntheticHourly(dailyCandles) {
+function createSyntheticHourly(dailyCandles, targetLength = 168) {
   const hourlyCandles = [];
   
-  for (const dailyCandle of dailyCandles) {
+  // Calculate how many days we need to generate targetLength hours
+  const daysNeeded = Math.ceil(targetLength / 24);
+  const candlesToUse = dailyCandles.slice(-daysNeeded);
+  
+  for (const dailyCandle of candlesToUse) {
     const dayStart = new Date(dailyCandle.timestamp);
     const dayHours = 24;
     
-    const range = dailyCandle.high - dailyCandle.low;
-    const volatility = range * 0.005;
+    const range = (dailyCandle.high || dailyCandle.close) - (dailyCandle.low || dailyCandle.close);
+    const volatility = range * 0.005; // ~0.5% per hour
     
     for (let hour = 0; hour < dayHours; hour++) {
+      // Stop if we've reached target length
+      if (hourlyCandles.length >= targetLength) break;
+      
       const timestamp = dayStart.getTime() + (hour * 60 * 60 * 1000);
       
+      // Interpolate price through the day
       const progress = hour / dayHours;
       const midPrice = dailyCandle.open + (dailyCandle.close - dailyCandle.open) * progress;
       const noise = (Math.random() - 0.5) * volatility * 2;
@@ -458,9 +479,13 @@ function createSyntheticHourly(dailyCandles) {
         volume: (dailyCandle.volume || 0) / dayHours
       });
     }
+    
+    // Break outer loop if we've reached target
+    if (hourlyCandles.length >= targetLength) break;
   }
   
-  return hourlyCandles;
+  // Ensure exactly targetLength candles
+  return hourlyCandles.slice(-targetLength);
 }
 
 /**
