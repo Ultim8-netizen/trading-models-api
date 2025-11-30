@@ -12,23 +12,23 @@
   "rewrites": [
     {
       "source": "/api/predict-crypto",
-      "destination": "/api/predict-crypto.js"
+      "destination": "/api/predict-crypto"
     },
     {
       "source": "/api/predict-forex",
-      "destination": "/api/predict-forex.js"
+      "destination": "/api/predict-forex"
     },
     {
       "source": "/api/fetch-data(.*)",
-      "destination": "/api/data-orchestrator.js"
+      "destination": "/api/fetch-data"
     },
     {
       "source": "/api/get-predictions(.*)",
-      "destination": "/api/get-predictions.js"
+      "destination": "/api/get-predictions"
     },
     {
       "source": "/api/store-prediction",
-      "destination": "/api/store-prediction.js"
+      "destination": "/api/store-prediction"
     },
     {
       "source": "/(.*)",
