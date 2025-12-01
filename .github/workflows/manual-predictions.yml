@@ -1,4 +1,4 @@
-name: Manual Predictions Trigger - FIXED
+name: Manual Predictions Trigger - ENHANCED
 
 on:
   workflow_dispatch:
@@ -72,107 +72,301 @@ jobs:
           echo "📊 Symbols: ${{ github.event.inputs.symbols_to_predict || 'BTC/USDT,ETH/USDT,SOL/USDT,EURUSD,GBPUSD' }}"
       
       # ======================================================================
-      # Predict: BTC/USDT
+      # Predict: BTC/USDT (WITH RETRY LOGIC)
       # ======================================================================
       - name: Predict BTC/USDT
         continue-on-error: true
+        id: predict_btc
         run: |
           echo "🪙 Processing BTC/USDT..."
           
-          # Fetch market data
-          echo "  📥 Fetching market data..."
-          FETCH_RESPONSE=$(curl -s "${{ env.API_BASE_URL }}/api/fetch-data?symbol=BTC%2FUSDT" \
-            --max-time 30 -w "\nHTTP_CODE:%{http_code}")
+          MAX_RETRIES=3
+          RETRY_COUNT=0
+          SUCCESS=false
           
-          FETCH_HTTP=$(echo "$FETCH_RESPONSE" | grep "HTTP_CODE:" | cut -d: -f2)
-          FETCH_BODY=$(echo "$FETCH_RESPONSE" | sed '/HTTP_CODE:/d')
+          while [ $RETRY_COUNT -lt $MAX_RETRIES ] && [ "$SUCCESS" = "false" ]; do
+            if [ $RETRY_COUNT -gt 0 ]; then
+              echo "  🔄 Retry attempt $((RETRY_COUNT + 1))/$MAX_RETRIES"
+              sleep $((RETRY_COUNT * 5))  # Exponential backoff
+            fi
+            
+            # Fetch market data with enhanced error handling
+            echo "  📥 Fetching market data..."
+            FETCH_RESPONSE=$(curl -s "${{ env.API_BASE_URL }}/api/fetch-data?symbol=BTC%2FUSDT" \
+              --max-time 30 -w "\nHTTP_CODE:%{http_code}")
+            
+            FETCH_HTTP=$(echo "$FETCH_RESPONSE" | grep "HTTP_CODE:" | cut -d: -f2)
+            FETCH_BODY=$(echo "$FETCH_RESPONSE" | sed '/HTTP_CODE:/d')
+            
+            # Check HTTP status
+            if [ "$FETCH_HTTP" != "200" ]; then
+              echo "  ❌ Fetch failed (HTTP $FETCH_HTTP)"
+              echo "  Response: $(echo "$FETCH_BODY" | head -c 300)"
+              RETRY_COUNT=$((RETRY_COUNT + 1))
+              continue
+            fi
+            
+            # Validate JSON
+            if ! echo "$FETCH_BODY" | jq empty 2>/dev/null; then
+              echo "  ❌ Invalid JSON response"
+              echo "  Response: $(echo "$FETCH_BODY" | head -c 300)"
+              RETRY_COUNT=$((RETRY_COUNT + 1))
+              continue
+            fi
+            
+            # Check success flag
+            FETCH_SUCCESS=$(echo "$FETCH_BODY" | jq -r '.success // false')
+            if [ "$FETCH_SUCCESS" != "true" ]; then
+              echo "  ❌ API returned success=false"
+              ERROR=$(echo "$FETCH_BODY" | jq -r '.error // "Unknown"')
+              echo "  Error: $ERROR"
+              
+              # If validation error, don't retry (won't fix itself)
+              if echo "$ERROR" | grep -qi "validation"; then
+                echo "  ⚠️ Validation error detected - skipping retries"
+                break
+              fi
+              
+              RETRY_COUNT=$((RETRY_COUNT + 1))
+              continue
+            fi
+            
+            echo "  ✅ Data fetched successfully"
+            
+            # Extract data payload
+            DATA_PAYLOAD=$(echo "$FETCH_BODY" | jq -c '.data // {}')
+            
+            if [ "$DATA_PAYLOAD" = "{}" ] || [ "$DATA_PAYLOAD" = "null" ]; then
+              echo "  ❌ No data in response"
+              RETRY_COUNT=$((RETRY_COUNT + 1))
+              continue
+            fi
+            
+            # Run prediction
+            echo "  🤖 Running prediction..."
+            PRED_RESPONSE=$(curl -s -X POST "${{ env.API_BASE_URL }}/api/predict-crypto" \
+              -H "Content-Type: application/json" \
+              --max-time 45 \
+              -w "\nHTTP_CODE:%{http_code}" \
+              -d "{\"symbol\":\"BTC/USDT\",\"data\":$DATA_PAYLOAD}")
+            
+            PRED_HTTP=$(echo "$PRED_RESPONSE" | grep "HTTP_CODE:" | cut -d: -f2)
+            PRED_BODY=$(echo "$PRED_RESPONSE" | sed '/HTTP_CODE:/d')
+            
+            if [ "$PRED_HTTP" != "200" ]; then
+              echo "  ❌ Prediction failed (HTTP $PRED_HTTP)"
+              echo "  Response: $(echo "$PRED_BODY" | head -c 300)"
+              RETRY_COUNT=$((RETRY_COUNT + 1))
+              continue
+            fi
+            
+            # Validate prediction JSON
+            if ! echo "$PRED_BODY" | jq empty 2>/dev/null; then
+              echo "  ❌ Invalid prediction JSON"
+              RETRY_COUNT=$((RETRY_COUNT + 1))
+              continue
+            fi
+            
+            # Check prediction success
+            PRED_SUCCESS=$(echo "$PRED_BODY" | jq -r '.success // false')
+            if [ "$PRED_SUCCESS" != "true" ]; then
+              echo "  ❌ Prediction API returned success=false"
+              ERROR=$(echo "$PRED_BODY" | jq -r '.error // "Unknown"')
+              echo "  Error: $ERROR"
+              RETRY_COUNT=$((RETRY_COUNT + 1))
+              continue
+            fi
+            
+            # Extract results
+            PRED_CLASS=$(echo "$PRED_BODY" | jq -r '.class // "UNKNOWN"')
+            PRED_CONF=$(echo "$PRED_BODY" | jq -r '.confidence // 0')
+            STORED=$(echo "$PRED_BODY" | jq -r '.stored // false')
+            
+            echo "  ✅ Prediction: $PRED_CLASS (Confidence: $(echo "$PRED_CONF * 100" | bc -l | cut -d. -f1)%)"
+            echo "  💾 Stored: $STORED"
+            
+            SUCCESS=true
+          done
           
-          if [ "$FETCH_HTTP" != "200" ]; then
-            echo "  ❌ Fetch failed (HTTP $FETCH_HTTP)"
-            echo "  Response: $(echo "$FETCH_BODY" | head -c 200)"
+          if [ "$SUCCESS" = "false" ]; then
+            echo "  ❌ Failed after $MAX_RETRIES attempts"
             exit 1
           fi
-          
-          # Validate JSON before using jq
-          if ! echo "$FETCH_BODY" | jq empty 2>/dev/null; then
-            echo "  ❌ Invalid JSON response"
-            echo "  Response: $(echo "$FETCH_BODY" | head -c 200)"
-            exit 1
-          fi
-          
-          SUCCESS=$(echo "$FETCH_BODY" | jq -r '.success // false')
-          if [ "$SUCCESS" != "true" ]; then
-            echo "  ❌ API returned success=false"
-            ERROR=$(echo "$FETCH_BODY" | jq -r '.error // "Unknown"')
-            echo "  Error: $ERROR"
-            exit 1
-          fi
-          
-          echo "  ✅ Data fetched successfully"
-          
-          # Safe data extraction
-          DATA_PAYLOAD=$(echo "$FETCH_BODY" | jq -c '.data // {}')
-          
-          if [ "$DATA_PAYLOAD" = "{}" ]; then
-            echo "  ❌ No data in response"
-            exit 1
-          fi
-          
-          echo "  🤖 Running prediction..."
-          PRED_RESPONSE=$(curl -s -X POST "${{ env.API_BASE_URL }}/api/predict-crypto" \
-            -H "Content-Type: application/json" \
-            --max-time 30 \
-            -w "\nHTTP_CODE:%{http_code}" \
-            -d "{\"symbol\":\"BTC/USDT\",\"data\":$DATA_PAYLOAD}")
-          
-          PRED_HTTP=$(echo "$PRED_RESPONSE" | grep "HTTP_CODE:" | cut -d: -f2)
-          PRED_BODY=$(echo "$PRED_RESPONSE" | sed '/HTTP_CODE:/d')
-          
-          if [ "$PRED_HTTP" != "200" ]; then
-            echo "  ❌ Prediction failed (HTTP $PRED_HTTP)"
-            echo "  Response: $(echo "$PRED_BODY" | head -c 200)"
-            exit 1
-          fi
-          
-          # Validate prediction response
-          if ! echo "$PRED_BODY" | jq empty 2>/dev/null; then
-            echo "  ❌ Invalid prediction JSON"
-            exit 1
-          fi
-          
-          PRED_CLASS=$(echo "$PRED_BODY" | jq -r '.class // "UNKNOWN"')
-          PRED_CONF=$(echo "$PRED_BODY" | jq -r '.confidence // 0')
-          STORED=$(echo "$PRED_BODY" | jq -r '.stored // false')
-          
-          echo "  ✅ Prediction: $PRED_CLASS (Confidence: $(echo "$PRED_CONF * 100" | bc)%)"
-          echo "  💾 Stored: $STORED"
       
       # ======================================================================
-      # Predict: ETH/USDT
+      # Predict: ETH/USDT (WITH RETRY LOGIC)
       # ======================================================================
       - name: Predict ETH/USDT
         continue-on-error: true
+        id: predict_eth
         run: |
           echo "🪙 Processing ETH/USDT..."
           
-          RESPONSE=$(curl -s "${{ env.API_BASE_URL }}/api/fetch-data?symbol=ETH%2FUSDT" \
-            --max-time 30 -w "\nHTTP_CODE:%{http_code}")
+          MAX_RETRIES=3
+          RETRY_COUNT=0
+          SUCCESS=false
           
-          HTTP_CODE=$(echo "$RESPONSE" | grep "HTTP_CODE:" | cut -d: -f2)
-          BODY=$(echo "$RESPONSE" | sed '/HTTP_CODE:/d')
+          while [ $RETRY_COUNT -lt $MAX_RETRIES ] && [ "$SUCCESS" = "false" ]; do
+            if [ $RETRY_COUNT -gt 0 ]; then
+              echo "  🔄 Retry attempt $((RETRY_COUNT + 1))/$MAX_RETRIES"
+              sleep $((RETRY_COUNT * 5))
+            fi
+            
+            echo "  📥 Fetching market data..."
+            FETCH_RESPONSE=$(curl -s "${{ env.API_BASE_URL }}/api/fetch-data?symbol=ETH%2FUSDT" \
+              --max-time 30 -w "\nHTTP_CODE:%{http_code}")
+            
+            FETCH_HTTP=$(echo "$FETCH_RESPONSE" | grep "HTTP_CODE:" | cut -d: -f2)
+            FETCH_BODY=$(echo "$FETCH_RESPONSE" | sed '/HTTP_CODE:/d')
+            
+            if [ "$FETCH_HTTP" != "200" ]; then
+              echo "  ❌ Fetch failed (HTTP $FETCH_HTTP)"
+              RETRY_COUNT=$((RETRY_COUNT + 1))
+              continue
+            fi
+            
+            if ! echo "$FETCH_BODY" | jq empty 2>/dev/null; then
+              echo "  ❌ Invalid JSON response"
+              RETRY_COUNT=$((RETRY_COUNT + 1))
+              continue
+            fi
+            
+            FETCH_SUCCESS=$(echo "$FETCH_BODY" | jq -r '.success // false')
+            if [ "$FETCH_SUCCESS" != "true" ]; then
+              ERROR=$(echo "$FETCH_BODY" | jq -r '.error // "Unknown"')
+              echo "  ❌ API error: $ERROR"
+              
+              if echo "$ERROR" | grep -qi "validation"; then
+                break
+              fi
+              
+              RETRY_COUNT=$((RETRY_COUNT + 1))
+              continue
+            fi
+            
+            DATA_PAYLOAD=$(echo "$FETCH_BODY" | jq -c '.data // {}')
+            
+            if [ "$DATA_PAYLOAD" = "{}" ] || [ "$DATA_PAYLOAD" = "null" ]; then
+              echo "  ❌ No data in response"
+              RETRY_COUNT=$((RETRY_COUNT + 1))
+              continue
+            fi
+            
+            echo "  🤖 Running prediction..."
+            PRED_RESPONSE=$(curl -s -X POST "${{ env.API_BASE_URL }}/api/predict-crypto" \
+              -H "Content-Type: application/json" \
+              --max-time 45 \
+              -w "\nHTTP_CODE:%{http_code}" \
+              -d "{\"symbol\":\"ETH/USDT\",\"data\":$DATA_PAYLOAD}")
+            
+            PRED_HTTP=$(echo "$PRED_RESPONSE" | grep "HTTP_CODE:" | cut -d: -f2)
+            PRED_BODY=$(echo "$PRED_RESPONSE" | sed '/HTTP_CODE:/d')
+            
+            if [ "$PRED_HTTP" != "200" ] || ! echo "$PRED_BODY" | jq empty 2>/dev/null; then
+              echo "  ❌ Prediction failed"
+              RETRY_COUNT=$((RETRY_COUNT + 1))
+              continue
+            fi
+            
+            PRED_SUCCESS=$(echo "$PRED_BODY" | jq -r '.success // false')
+            if [ "$PRED_SUCCESS" != "true" ]; then
+              RETRY_COUNT=$((RETRY_COUNT + 1))
+              continue
+            fi
+            
+            PRED_CLASS=$(echo "$PRED_BODY" | jq -r '.class // "UNKNOWN"')
+            PRED_CONF=$(echo "$PRED_BODY" | jq -r '.confidence // 0')
+            
+            echo "  ✅ Prediction: $PRED_CLASS (Confidence: $(echo "$PRED_CONF * 100" | bc -l | cut -d. -f1)%)"
+            
+            SUCCESS=true
+          done
           
-          if [ "$HTTP_CODE" != "200" ] || ! echo "$BODY" | jq empty 2>/dev/null; then
-            echo "  ❌ Failed"
+          if [ "$SUCCESS" = "false" ]; then
+            echo "  ❌ Failed after $MAX_RETRIES attempts"
             exit 1
           fi
+      
+      # ======================================================================
+      # Predict: SOL/USDT (WITH RETRY LOGIC)
+      # ======================================================================
+      - name: Predict SOL/USDT
+        continue-on-error: true
+        id: predict_sol
+        run: |
+          echo "🪙 Processing SOL/USDT..."
           
-          DATA=$(echo "$BODY" | jq -c '.data')
+          MAX_RETRIES=3
+          RETRY_COUNT=0
+          SUCCESS=false
           
-          PRED=$(curl -s -X POST "${{ env.API_BASE_URL }}/api/predict-crypto" \
-            -H "Content-Type: application/json" \
-            -d "{\"symbol\":\"ETH/USDT\",\"data\":$DATA}")
+          while [ $RETRY_COUNT -lt $MAX_RETRIES ] && [ "$SUCCESS" = "false" ]; do
+            if [ $RETRY_COUNT -gt 0 ]; then
+              echo "  🔄 Retry attempt $((RETRY_COUNT + 1))/$MAX_RETRIES"
+              sleep $((RETRY_COUNT * 5))
+            fi
+            
+            echo "  📥 Fetching market data..."
+            FETCH_RESPONSE=$(curl -s "${{ env.API_BASE_URL }}/api/fetch-data?symbol=SOL%2FUSDT" \
+              --max-time 30 -w "\nHTTP_CODE:%{http_code}")
+            
+            FETCH_HTTP=$(echo "$FETCH_RESPONSE" | grep "HTTP_CODE:" | cut -d: -f2)
+            FETCH_BODY=$(echo "$FETCH_RESPONSE" | sed '/HTTP_CODE:/d')
+            
+            if [ "$FETCH_HTTP" != "200" ] || ! echo "$FETCH_BODY" | jq empty 2>/dev/null; then
+              RETRY_COUNT=$((RETRY_COUNT + 1))
+              continue
+            fi
+            
+            FETCH_SUCCESS=$(echo "$FETCH_BODY" | jq -r '.success // false')
+            if [ "$FETCH_SUCCESS" != "true" ]; then
+              ERROR=$(echo "$FETCH_BODY" | jq -r '.error // "Unknown"')
+              if echo "$ERROR" | grep -qi "validation"; then
+                break
+              fi
+              RETRY_COUNT=$((RETRY_COUNT + 1))
+              continue
+            fi
+            
+            DATA_PAYLOAD=$(echo "$FETCH_BODY" | jq -c '.data // {}')
+            if [ "$DATA_PAYLOAD" = "{}" ] || [ "$DATA_PAYLOAD" = "null" ]; then
+              RETRY_COUNT=$((RETRY_COUNT + 1))
+              continue
+            fi
+            
+            echo "  🤖 Running prediction..."
+            PRED_RESPONSE=$(curl -s -X POST "${{ env.API_BASE_URL }}/api/predict-crypto" \
+              -H "Content-Type: application/json" \
+              --max-time 45 \
+              -w "\nHTTP_CODE:%{http_code}" \
+              -d "{\"symbol\":\"SOL/USDT\",\"data\":$DATA_PAYLOAD}")
+            
+            PRED_HTTP=$(echo "$PRED_RESPONSE" | grep "HTTP_CODE:" | cut -d: -f2)
+            PRED_BODY=$(echo "$PRED_RESPONSE" | sed '/HTTP_CODE:/d')
+            
+            if [ "$PRED_HTTP" != "200" ] || ! echo "$PRED_BODY" | jq empty 2>/dev/null; then
+              RETRY_COUNT=$((RETRY_COUNT + 1))
+              continue
+            fi
+            
+            PRED_SUCCESS=$(echo "$PRED_BODY" | jq -r '.success // false')
+            if [ "$PRED_SUCCESS" != "true" ]; then
+              RETRY_COUNT=$((RETRY_COUNT + 1))
+              continue
+            fi
+            
+            PRED_CLASS=$(echo "$PRED_BODY" | jq -r '.class // "UNKNOWN"')
+            PRED_CONF=$(echo "$PRED_BODY" | jq -r '.confidence // 0')
+            
+            echo "  ✅ Prediction: $PRED_CLASS (Confidence: $(echo "$PRED_CONF * 100" | bc -l | cut -d. -f1)%)"
+            
+            SUCCESS=true
+          done
           
-          echo "  ✅ $(echo "$PRED" | jq -r '.class') @ $(echo "$PRED" | jq -r '.confidence')"
+          if [ "$SUCCESS" = "false" ]; then
+            echo "  ❌ Failed after $MAX_RETRIES attempts"
+            exit 1
+          fi
       
       # ======================================================================
       # Storage Verification

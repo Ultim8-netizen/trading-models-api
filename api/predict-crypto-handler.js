@@ -43,7 +43,7 @@ const CONFIG = {
     ],
     MIN_MODELS_REQUIRED: 3,
     PREDICTION_TIMEOUT_MS: 5000,
-    STORAGE_TIMEOUT_MS: 10000, // FIXED: Increased from 3000ms to 10000ms
+    STORAGE_TIMEOUT_MS: 15000, // FIXED: Increased from 3000ms to 15000ms
     MEMORY_WARNING_THRESHOLD_MB: 700,
     MEMORY_CRITICAL_THRESHOLD_MB: 900,
     MEMORY_LIMIT_MB: 1024
@@ -610,10 +610,11 @@ function ensembleCryptoPredictions(predictions) {
  * 
  * FIXES:
  * - Uses localhost for same-process API calls (faster, more reliable)
- * - Increased timeout from 3s to 10s
+ * - Increased timeout from 3s to 15s
  * - Enhanced error logging with stack traces
  * - Proper response validation and error text extraction
  * - AbortSignal for timeout instead of Promise.race
+ * - Non-fatal error handling (storage failures don't fail predictions)
  * 
  * @param {Object} predictionData - Prediction to store
  * @param {Object} req - Request object
@@ -646,15 +647,23 @@ async function storeCryptoPredictionAsync(predictionData, req) {
 
             clearTimeout(timeoutId);
 
-            // FIXED: Check response status and extract error details
+            // FIXED: Enhanced error handling
             if (!response.ok) {
-                const errorText = await response.text();
+                let errorText = '';
+                try {
+                    errorText = await response.text();
+                } catch (e) {
+                    errorText = response.statusText;
+                }
+                
                 console.warn(`  ✗ Storage failed: HTTP ${response.status}`);
                 console.warn(`  Error details: ${errorText.substring(0, 200)}`);
+                
                 return { 
                     success: false, 
                     error: `HTTP ${response.status}`,
-                    details: errorText.substring(0, 200)
+                    details: errorText.substring(0, 200),
+                    nonFatal: true // Mark as non-fatal
                 };
             }
 
@@ -668,10 +677,12 @@ async function storeCryptoPredictionAsync(predictionData, req) {
             // Handle timeout vs other errors
             if (fetchError.name === 'AbortError') {
                 console.warn(`  ✗ Storage timeout after ${CONFIG.STORAGE_TIMEOUT_MS}ms`);
+                // DON'T fail prediction if storage times out
                 return { 
                     success: false, 
-                    error: 'Storage timeout',
-                    timeout: true 
+                    error: 'Storage timeout (non-fatal)',
+                    timeout: true,
+                    nonFatal: true // Mark as non-fatal
                 };
             }
             
@@ -683,10 +694,12 @@ async function storeCryptoPredictionAsync(predictionData, req) {
         console.error(`[Storage] Error: ${error.message}`);
         console.error(`[Storage] Stack: ${error.stack}`);
         
+        // DON'T fail the entire prediction due to storage issues
         return { 
             success: false, 
             error: error.message,
-            stack: error.stack
+            stack: error.stack,
+            nonFatal: true // Mark as non-fatal
         };
     }
 }

@@ -13,6 +13,7 @@
  * ✓ Retry logic with exponential backoff
  * ✓ Enhanced headers to bypass geo-blocking
  * ✓ FIXED: Consistent array lengths in synthetic data
+ * ✓ FIXED: Robust validation of data consistency
  * ✓ Batch requests where possible
  * ✓ Cache responses aggressively
  * ✓ Parallel processing for speed
@@ -367,23 +368,32 @@ async function fetchCryptoDataCoinGecko(pair) {
   }
   
   try {
-    // CoinGecko only provides daily data
     const candles = await fetchCoinGeckoMarketData(coinId);
     
     if (candles.length < 30) {
       throw new Error(`Insufficient data: ${candles.length} candles`);
     }
     
-    // Use daily as base (ensure we have enough - last 365 days)
+    // Use daily as base
     const candles1d = candles.slice(-365);
     
-    // Create synthetic hourly (168 hours = 1 week)
+    // CRITICAL FIX: Create synthetic hourly with GUARANTEED length
     const syntheticHourly = createSyntheticHourly(candles1d, 168);
     
-    // Aggregate to 4h (42 periods = 1 week of 4h candles)
-    const synthetic4h = aggregateCandles(syntheticHourly, 4).slice(-42);
+    // CRITICAL FIX: Aggregate to 4h with EXACT target length
+    const synthetic4hRaw = aggregateCandles(syntheticHourly, 4);
+    const synthetic4h = synthetic4hRaw.slice(-42); // Exactly 42 periods (1 week of 4h)
     
-    // CRITICAL: Ensure all arrays have consistent lengths
+    // CRITICAL: Ensure 4h has exactly 42 candles
+    while (synthetic4h.length < 42) {
+      const lastCandle = synthetic4h[synthetic4h.length - 1];
+      synthetic4h.push({
+        ...lastCandle,
+        timestamp: lastCandle.timestamp + (4 * 60 * 60 * 1000)
+      });
+    }
+    
+    // Build data object
     const data = {
       '1h_timestamp': syntheticHourly.map(c => c.timestamp),
       '1h_open': syntheticHourly.map(c => c.open),
@@ -407,17 +417,22 @@ async function fetchCryptoDataCoinGecko(pair) {
       '1d_volume': candles1d.map(c => c.volume)
     };
     
-    // VERIFY consistent lengths
-    console.log(`  Lengths: 1h=${syntheticHourly.length}, 4h=${synthetic4h.length}, 1d=${candles1d.length}`);
+    // CRITICAL FIX: Validate consistency before returning
+    const validation = validateDataConsistency(data);
     
-    console.log(`✓ CoinGecko success (synthetic: 1h×${syntheticHourly.length}, 4h×${synthetic4h.length}, 1d×${candles1d.length})`);
+    if (!validation.valid) {
+      throw new Error(`Data consistency validation failed: ${validation.errors.join('; ')}`);
+    }
+    
+    console.log(`✓ CoinGecko success - validated: 1h=${validation.lengths['1h']}, 4h=${validation.lengths['4h']}, 1d=${validation.lengths['1d']}`);
     
     return {
       source: 'CoinGecko (synthetic)',
       pair,
       data,
       success: true,
-      note: 'Synthetic hourly/4h created from daily data'
+      note: 'Synthetic hourly/4h created from daily data',
+      validation: validation.lengths
     };
     
   } catch (error) {
@@ -438,33 +453,51 @@ async function fetchCryptoDataCoinGecko(pair) {
 
 /**
  * Create synthetic hourly candles from daily candles
- * FIXED: Ensures exactly targetLength candles are returned
+ * FIXED: Guarantees exactly targetLength candles
  * 
  * @param {Array} dailyCandles - Daily candles
  * @param {Number} targetLength - Target number of hourly candles (default 168)
- * @returns {Array} Synthetic hourly candles
+ * @returns {Array} Synthetic hourly candles (GUARANTEED targetLength)
  */
 function createSyntheticHourly(dailyCandles, targetLength = 168) {
+  console.log(`[Synthetic] Creating ${targetLength} hourly candles from ${dailyCandles.length} daily candles`);
+  
   const hourlyCandles = [];
   
-  // Calculate how many days we need to generate targetLength hours
+  // CRITICAL FIX: Ensure we have enough daily data
   const daysNeeded = Math.ceil(targetLength / 24);
+  
+  if (dailyCandles.length < daysNeeded) {
+    console.warn(`[Synthetic] Insufficient daily data: ${dailyCandles.length} days, need ${daysNeeded}`);
+    
+    // FALLBACK: Repeat the available data to fill the gap
+    const repeatedCandles = [];
+    while (repeatedCandles.length < daysNeeded) {
+      repeatedCandles.push(...dailyCandles);
+    }
+    dailyCandles = repeatedCandles.slice(0, daysNeeded);
+  }
+  
   const candlesToUse = dailyCandles.slice(-daysNeeded);
   
   for (const dailyCandle of candlesToUse) {
+    // Stop if we've reached target length
+    if (hourlyCandles.length >= targetLength) {
+      break;
+    }
+    
     const dayStart = new Date(dailyCandle.timestamp);
     const dayHours = 24;
     
     const range = (dailyCandle.high || dailyCandle.close) - (dailyCandle.low || dailyCandle.close);
-    const volatility = range * 0.005; // ~0.5% per hour
+    const volatility = range * 0.005;
     
-    for (let hour = 0; hour < dayHours; hour++) {
-      // Stop if we've reached target length
-      if (hourlyCandles.length >= targetLength) break;
-      
+    // Generate hourly candles for this day
+    const candlesThisDay = Math.min(dayHours, targetLength - hourlyCandles.length);
+    
+    for (let hour = 0; hour < candlesThisDay; hour++) {
       const timestamp = dayStart.getTime() + (hour * 60 * 60 * 1000);
       
-      // Interpolate price through the day
       const progress = hour / dayHours;
       const midPrice = dailyCandle.open + (dailyCandle.close - dailyCandle.open) * progress;
       const noise = (Math.random() - 0.5) * volatility * 2;
@@ -479,17 +512,33 @@ function createSyntheticHourly(dailyCandles, targetLength = 168) {
         volume: (dailyCandle.volume || 0) / dayHours
       });
     }
-    
-    // Break outer loop if we've reached target
-    if (hourlyCandles.length >= targetLength) break;
   }
   
-  // Ensure exactly targetLength candles
-  return hourlyCandles.slice(-targetLength);
+  // CRITICAL FIX: If still short, pad with last candle
+  while (hourlyCandles.length < targetLength) {
+    const lastCandle = hourlyCandles[hourlyCandles.length - 1];
+    hourlyCandles.push({
+      ...lastCandle,
+      timestamp: lastCandle.timestamp + (60 * 60 * 1000)
+    });
+  }
+  
+  // CRITICAL FIX: Ensure EXACTLY targetLength
+  const result = hourlyCandles.slice(-targetLength);
+  
+  console.log(`[Synthetic] Generated ${result.length} hourly candles (target: ${targetLength})`);
+  
+  // VALIDATION: Verify length
+  if (result.length !== targetLength) {
+    throw new Error(`Synthetic hourly generation failed: got ${result.length}, expected ${targetLength}`);
+  }
+  
+  return result;
 }
 
 /**
  * Aggregate candles to higher timeframes
+ * FIXED: Ensures consistent output length
  * 
  * @param {Array} candles - Base candles
  * @param {Number} factor - Aggregation factor
@@ -498,21 +547,90 @@ function createSyntheticHourly(dailyCandles, targetLength = 168) {
 function aggregateCandles(candles, factor) {
   const aggregated = [];
   
+  // CRITICAL FIX: Validate input
+  if (!candles || candles.length === 0) {
+    console.warn(`[Aggregate] No candles to aggregate`);
+    return [];
+  }
+  
+  console.log(`[Aggregate] Aggregating ${candles.length} candles by factor ${factor}`);
+  
   for (let i = 0; i < candles.length; i += factor) {
-    const chunk = candles.slice(i, i + factor);
+    const chunk = candles.slice(i, Math.min(i + factor, candles.length));
+    
     if (chunk.length === 0) continue;
     
+    // CRITICAL FIX: Handle incomplete chunks at the end
+    const validChunk = chunk.filter(c => c !== null && c !== undefined);
+    
+    if (validChunk.length === 0) continue;
+    
     aggregated.push({
-      timestamp: chunk[0].timestamp,
-      open: chunk[0].open,
-      high: Math.max(...chunk.map(c => c.high)),
-      low: Math.min(...chunk.map(c => c.low)),
-      close: chunk[chunk.length - 1].close,
-      volume: chunk.reduce((sum, c) => sum + (c.volume || 0), 0)
+      timestamp: validChunk[0].timestamp,
+      open: validChunk[0].open,
+      high: Math.max(...validChunk.map(c => c.high)),
+      low: Math.min(...validChunk.map(c => c.low)),
+      close: validChunk[validChunk.length - 1].close,
+      volume: validChunk.reduce((sum, c) => sum + (c.volume || 0), 0)
     });
   }
   
+  console.log(`[Aggregate] Generated ${aggregated.length} aggregated candles`);
+  
   return aggregated;
+}
+
+/**
+ * Validate that all timeframe arrays have consistent lengths
+ * CRITICAL: Prevents "inconsistent lengths" errors
+ * 
+ * @param {Object} data - Multi-timeframe data object
+ * @returns {Object} Validation result
+ */
+function validateDataConsistency(data) {
+  console.log(`[Validation] Checking data consistency...`);
+  
+  const timeframes = ['1h', '4h', '1d'];
+  const fields = ['timestamp', 'open', 'high', 'low', 'close', 'volume'];
+  const errors = [];
+  
+  // Check each timeframe has all fields with same length
+  for (const tf of timeframes) {
+    const lengths = new Set();
+    
+    for (const field of fields) {
+      const key = `${tf}_${field}`;
+      
+      if (!data[key]) {
+        errors.push(`Missing field: ${key}`);
+        continue;
+      }
+      
+      if (!Array.isArray(data[key])) {
+        errors.push(`Field ${key} is not an array`);
+        continue;
+      }
+      
+      lengths.add(data[key].length);
+    }
+    
+    // CRITICAL: All fields in a timeframe must have same length
+    if (lengths.size > 1) {
+      errors.push(`Timeframe ${tf} has inconsistent field lengths: ${Array.from(lengths).join(', ')}`);
+    }
+    
+    console.log(`  ${tf}: ${Array.from(lengths)[0] || 0} candles`);
+  }
+  
+  return {
+    valid: errors.length === 0,
+    errors,
+    lengths: {
+      '1h': data['1h_close']?.length || 0,
+      '4h': data['4h_close']?.length || 0,
+      '1d': data['1d_close']?.length || 0
+    }
+  };
 }
 
 /**
@@ -641,6 +759,7 @@ module.exports = {
   fetchBinanceCandles,
   aggregateCandles,
   validateCryptoData,
+  validateDataConsistency,
   createSyntheticHourly,
   retryWithBackoff,
   CONFIG,
