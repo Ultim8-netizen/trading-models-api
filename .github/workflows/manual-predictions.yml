@@ -50,12 +50,54 @@ jobs:
           echo "✅ MongoDB connection verified"
 
   # ============================================================================
-  # STEP 2: Generate Predictions
+  # STEP 2: NEW - Warm Up Models BEFORE Predictions
+  # ============================================================================
+  warm-up-models:
+    name: Warm Up ML Models
+    runs-on: ubuntu-latest
+    needs: verify-mongodb
+    
+    steps:
+      - name: Warm up Vercel functions
+        run: |
+          echo "🔥 Warming up ML models and functions..."
+          
+          # Call warm-up endpoint
+          RESPONSE=$(curl -s "${{ env.API_BASE_URL }}/api/warm-up" \
+            --max-time 30 -w "\nHTTP_CODE:%{http_code}")
+          
+          HTTP_CODE=$(echo "$RESPONSE" | grep "HTTP_CODE:" | cut -d: -f2)
+          BODY=$(echo "$RESPONSE" | sed '/HTTP_CODE:/d')
+          
+          echo "HTTP Status: $HTTP_CODE"
+          echo "Response: $BODY"
+          
+          if [ "$HTTP_CODE" = "200" ]; then
+            echo "✅ Models warmed up successfully"
+            
+            # Try to parse warmup details if JSON response
+            if echo "$BODY" | jq empty 2>/dev/null; then
+              WARMUP_TIME=$(echo "$BODY" | jq -r '.warmupTime // "N/A"')
+              MODELS_COUNT=$(echo "$BODY" | jq -r '.modelsWarmed // "N/A"')
+              echo "   Warmup time: ${WARMUP_TIME}ms"
+              echo "   Models warmed: $MODELS_COUNT"
+            fi
+          else
+            echo "⚠️ Warmup returned HTTP $HTTP_CODE (continuing anyway)"
+            echo "   This may result in slower first predictions"
+          fi
+          
+          # Wait for function to stay warm and models to be fully loaded
+          echo "⏳ Allowing models to stabilize..."
+          sleep 15
+
+  # ============================================================================
+  # STEP 3: Generate Predictions (Now using warm instances)
   # ============================================================================
   manual-predictions:
     name: Generate Predictions (Manual Trigger)
     runs-on: ubuntu-latest
-    needs: verify-mongodb
+    needs: [verify-mongodb, warm-up-models]  # ⭐ Wait for both MongoDB and warmup
     
     steps:
       - name: Checkout code
@@ -70,6 +112,7 @@ jobs:
         run: |
           echo "🎯 API Base URL: ${{ env.API_BASE_URL }}"
           echo "📊 Symbols: ${{ github.event.inputs.symbols_to_predict || 'BTC/USDT,ETH/USDT,SOL/USDT,EURUSD,GBPUSD' }}"
+          echo "🔥 Models are pre-warmed for faster predictions"
       
       # ======================================================================
       # Predict: BTC/USDT (WITH RETRY LOGIC)
@@ -142,8 +185,8 @@ jobs:
               continue
             fi
             
-            # Run prediction
-            echo "  🤖 Running prediction..."
+            # Run prediction (should be faster due to warmup)
+            echo "  🤖 Running prediction (using pre-warmed models)..."
             PRED_RESPONSE=$(curl -s -X POST "${{ env.API_BASE_URL }}/api/predict-crypto" \
               -H "Content-Type: application/json" \
               --max-time 45 \
@@ -181,9 +224,11 @@ jobs:
             PRED_CLASS=$(echo "$PRED_BODY" | jq -r '.class // "UNKNOWN"')
             PRED_CONF=$(echo "$PRED_BODY" | jq -r '.confidence // 0')
             STORED=$(echo "$PRED_BODY" | jq -r '.stored // false')
+            DURATION=$(echo "$PRED_BODY" | jq -r '.processingTime // "N/A"')
             
             echo "  ✅ Prediction: $PRED_CLASS (Confidence: $(echo "$PRED_CONF * 100" | bc -l | cut -d. -f1)%)"
             echo "  💾 Stored: $STORED"
+            echo "  ⏱️ Processing time: ${DURATION}ms"
             
             SUCCESS=true
           done
@@ -252,7 +297,7 @@ jobs:
               continue
             fi
             
-            echo "  🤖 Running prediction..."
+            echo "  🤖 Running prediction (using pre-warmed models)..."
             PRED_RESPONSE=$(curl -s -X POST "${{ env.API_BASE_URL }}/api/predict-crypto" \
               -H "Content-Type: application/json" \
               --max-time 45 \
@@ -276,8 +321,10 @@ jobs:
             
             PRED_CLASS=$(echo "$PRED_BODY" | jq -r '.class // "UNKNOWN"')
             PRED_CONF=$(echo "$PRED_BODY" | jq -r '.confidence // 0')
+            DURATION=$(echo "$PRED_BODY" | jq -r '.processingTime // "N/A"')
             
             echo "  ✅ Prediction: $PRED_CLASS (Confidence: $(echo "$PRED_CONF * 100" | bc -l | cut -d. -f1)%)"
+            echo "  ⏱️ Processing time: ${DURATION}ms"
             
             SUCCESS=true
           done
@@ -334,7 +381,7 @@ jobs:
               continue
             fi
             
-            echo "  🤖 Running prediction..."
+            echo "  🤖 Running prediction (using pre-warmed models)..."
             PRED_RESPONSE=$(curl -s -X POST "${{ env.API_BASE_URL }}/api/predict-crypto" \
               -H "Content-Type: application/json" \
               --max-time 45 \
@@ -357,8 +404,10 @@ jobs:
             
             PRED_CLASS=$(echo "$PRED_BODY" | jq -r '.class // "UNKNOWN"')
             PRED_CONF=$(echo "$PRED_BODY" | jq -r '.confidence // 0')
+            DURATION=$(echo "$PRED_BODY" | jq -r '.processingTime // "N/A"')
             
             echo "  ✅ Prediction: $PRED_CLASS (Confidence: $(echo "$PRED_CONF * 100" | bc -l | cut -d. -f1)%)"
+            echo "  ⏱️ Processing time: ${DURATION}ms"
             
             SUCCESS=true
           done
@@ -412,6 +461,7 @@ jobs:
           echo "========================================================================"
           echo ""
           echo "🌐 Dashboard: ${{ env.API_BASE_URL }}"
+          echo "🔥 Used pre-warmed models for faster predictions"
           echo ""
           echo "🔄 Refresh your dashboard to see new predictions"
           echo ""

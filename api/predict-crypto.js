@@ -37,8 +37,9 @@
  * }
  */
 
+// CRITICAL CHANGE: Import global cache instead of lazy loader
+const { getCryptoModels } = require('../utils/global-model-cache');
 const {
-    getGlobalLazyLoader,
     checkMemoryHealth,
     engineCryptoFeatures,
     extractFeatureVector,
@@ -117,14 +118,15 @@ module.exports = async (req, res) => {
 
         console.log(`[${requestId}] Features: ${featureVector.length} extracted`);
 
-        // ====== STEP 4: MODEL LOADING (LAZY - Only when needed) ======
-        console.log(`[${requestId}] Loading models (lazy)...`);
-        const loader = getGlobalLazyLoader();
-        const models = await loader.loadAvailableModels([
-            'temporal_transformer',
-            'hybrid_transformer',
-            'hierarchical_lstm'
-        ]);
+        // ====== STEP 4: MODEL LOADING (CRITICAL FIX - Use Global Cache) ======
+        console.log(`[${requestId}] Getting models from global cache...`);
+        const modelsStartTime = Date.now();
+        
+        // CRITICAL: Get globally cached models (fast!)
+        const models = await getCryptoModels(); // Uses cached models!
+        
+        const modelsTime = Date.now() - modelsStartTime;
+        console.log(`[${requestId}] Models ready in ${modelsTime}ms (${models.length} models)`);
 
         if (models.length === 0) {
             return res.status(503).json({
@@ -192,7 +194,8 @@ module.exports = async (req, res) => {
                 after_mb: memAfter.memMB,
                 tensors_before: memBefore.numTensors,
                 tensors_after: memAfter.numTensors
-            }
+            },
+            models_load_time_ms: modelsTime
         };
 
         // ====== STEP 9: NON-BLOCKING STORAGE ======
@@ -209,7 +212,7 @@ module.exports = async (req, res) => {
             });
 
         console.log(`\n${'='.repeat(70)}`);
-        console.log(`[${requestId}] SUCCESS (${elapsed}ms)`);
+        console.log(`[${requestId}] SUCCESS (${elapsed}ms) - Models: ${modelsTime}ms`);
         console.log(`${'='.repeat(70)}\n`);
 
         // ====== STEP 10: RETURN RESPONSE ======
@@ -224,6 +227,7 @@ module.exports = async (req, res) => {
             models_used: ensembleResult.modelsUsed,
             models_failed: models.length - ensembleResult.modelsUsed,
             inference_time_ms: elapsed,
+            models_load_time_ms: modelsTime,
             timestamp: predictionData.timestamp,
             request_id: requestId,
             stored: storageResult.success,
@@ -253,12 +257,6 @@ module.exports = async (req, res) => {
         });
     }
 };
-/**
- * predict-crypto.js (Part 2)
- * Health Check and Status Endpoints
- * 
- * This section is appended to the main handler file
- */
 
 // ============================================================================
 // HEALTH CHECK ENDPOINT
@@ -276,21 +274,22 @@ module.exports.health = async (req, res) => {
     }
 
     try {
-        const { getGlobalLazyLoader, checkMemoryHealth, CONFIG } = require('./predict-crypto-handler');
+        // UPDATED: Use global cache for health check
+        const { getCryptoModels, getGlobalCacheStats } = require('../utils/global-model-cache');
         
-        const loader = getGlobalLazyLoader();
-        const stats = loader.getStats ? loader.getStats() : { loaded: 0, failed: 0, reused: 0 };
+        const models = await getCryptoModels();
+        const cacheStats = getGlobalCacheStats ? getGlobalCacheStats() : { loaded: models.length };
         const memStats = checkMemoryHealth();
 
         return res.status(200).json({
             status: 'healthy',
             service: 'crypto-predictions',
             asset_class: 'crypto',
-            available_models: CONFIG?.MODELS?.length || 0,
+            available_models: models.length,
             model_cache: {
-                loaded: stats.loaded || 0,
-                failed: stats.failed || 0,
-                reused: stats.reused || 0
+                loaded: cacheStats.loaded || models.length,
+                cached: true,
+                load_time_ms: cacheStats.loadTime || 0
             },
             memory: {
                 used_mb: memStats.memMB.toFixed(2),
@@ -329,26 +328,27 @@ module.exports.status = async (req, res) => {
     }
 
     try {
-        const { getGlobalLazyLoader, CONFIG } = require('./predict-crypto-handler');
+        const { getCryptoModels, getGlobalCacheStats } = require('../utils/global-model-cache');
         
-        const loader = getGlobalLazyLoader();
-        const stats = loader.getStats ? loader.getStats() : { loaded: 0, failed: 0, reused: 0 };
+        const models = await getCryptoModels();
+        const cacheStats = getGlobalCacheStats ? getGlobalCacheStats() : {};
 
         return res.status(200).json({
             service: 'crypto-predictions',
             asset_class: 'crypto',
-            version: '2.0.0-optimized',
+            version: '2.1.0-global-cache',
+            models_count: models.length,
             models: CONFIG?.MODELS || [],
             config: {
                 min_models_required: CONFIG?.MIN_MODELS_REQUIRED || 3,
                 prediction_timeout_ms: CONFIG?.PREDICTION_TIMEOUT_MS || 8000,
                 storage_timeout_ms: CONFIG?.STORAGE_TIMEOUT_MS || 3000,
-                lazy_loading: true,
+                global_cache: true,
                 memory_optimization: true
             },
-            cache_stats: stats,
+            cache_stats: cacheStats,
             features: {
-                lazy_loading: 'enabled',
+                global_model_cache: 'enabled',
                 memory_tracking: 'enabled',
                 optimized_inference: 'enabled',
                 non_blocking_storage: 'enabled',
@@ -387,17 +387,18 @@ module.exports.models = async (req, res) => {
     }
 
     try {
-        const { getGlobalLazyLoader, CONFIG } = require('./predict-crypto-handler');
+        const { getCryptoModels, getGlobalCacheStats } = require('../utils/global-model-cache');
         
-        const loader = getGlobalLazyLoader();
-        const stats = loader.getStats ? loader.getStats() : {};
+        const models = await getCryptoModels();
+        const cacheStats = getGlobalCacheStats ? getGlobalCacheStats() : {};
 
         return res.status(200).json({
             service: 'crypto-predictions',
-            total_models: CONFIG?.MODELS?.length || 0,
+            total_models: models.length,
             models: CONFIG?.MODELS || [],
-            cache_stats: stats,
-            loading_strategy: 'lazy',
+            cache_stats: cacheStats,
+            loading_strategy: 'global_cache',
+            cached: true,
             timestamp: new Date().toISOString()
         });
     } catch (error) {
@@ -407,10 +408,3 @@ module.exports.models = async (req, res) => {
         });
     }
 };
-
-// ============================================================================
-// EXPORT ALL HANDLERS
-// ============================================================================
-
-// Main prediction endpoint is the default export (already exported above)
-// Health, status, and models endpoints are named exports

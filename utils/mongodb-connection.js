@@ -6,39 +6,38 @@ let connectionAttempts = 0;
 const MAX_ATTEMPTS = 3;
 
 async function connectToDatabase() {
-  // Ensure URI exists
   if (!process.env.MONGODB_URI) {
     console.error('❌ FATAL: MONGODB_URI environment variable is not set!');
     throw new Error('MONGODB_URI not configured in environment variables.');
   }
 
-  // Use cached connection (Vercel keeps this alive across invocations)
+  // Reuse existing connection if still open
   if (cachedClient && cachedClient.topology && !cachedClient.topology.s.closed) {
     console.log('✓ Using cached MongoDB connection');
     return cachedDb;
   }
 
   console.log(`🔄 Connecting to MongoDB (attempt ${connectionAttempts + 1}/${MAX_ATTEMPTS})...`);
+  connectionAttempts++;
 
   try {
-    connectionAttempts++;
-
     const client = new MongoClient(process.env.MONGODB_URI, {
-      // Connection stability
-      maxPoolSize: 10,
-      minPoolSize: 2,
-      retryWrites: true,
+      // Connection pool — optimized for Vercel
+      maxPoolSize: 5,       // lighter
+      minPoolSize: 1,
+      maxIdleTimeMS: 5000,  // releases idle sockets
 
-      // FIXES
+      // Timeouts — conservative + stable
+      serverSelectionTimeoutMS: 8000,
+      connectTimeoutMS: 12000,
+      socketTimeoutMS: 30000,
+
+      // Stability
+      retryWrites: true,
       w: 'majority',
       wtimeoutMS: 5000,
 
-      // Timeout tuning
-      serverSelectionTimeoutMS: 10000,
-      connectTimeoutMS: 20000,
-      socketTimeoutMS: 45000,
-
-      family: 4 // Force IPv4
+      family: 4 // force IPv4
     });
 
     await client.connect();
@@ -46,23 +45,9 @@ async function connectToDatabase() {
 
     const db = client.db(process.env.MONGODB_DB || 'trading');
 
-    // Ping to confirm connection
+    // Quick health check
     await db.command({ ping: 1 });
     console.log('✅ MongoDB ping successful');
-
-    /**
-     * OPTIONAL WRITE TEST:
-     * This verifies the cluster truly accepts writes,
-     * but it will create and delete 1 document on every cold start.
-     * 
-     * Uncomment if you need to validate DB write capability.
-     */
-    /*
-    const testCol = db.collection('_connection_test');
-    await testCol.insertOne({ test: true, timestamp: new Date() });
-    await testCol.deleteOne({ test: true });
-    console.log('✅ MongoDB write test successful');
-    */
 
     // Cache connection
     cachedClient = client;
@@ -70,13 +55,14 @@ async function connectToDatabase() {
     connectionAttempts = 0;
 
     return db;
+
   } catch (error) {
     console.error(`❌ MongoDB connection error (attempt ${connectionAttempts}):`, error.message);
 
     if (connectionAttempts < MAX_ATTEMPTS) {
-      console.log(`⏳ Retrying in 3 seconds...`);
+      console.log('⏳ Retrying in 3 seconds...');
       await new Promise(r => setTimeout(r, 3000));
-      return connectToDatabase(); // retry
+      return connectToDatabase();
     }
 
     connectionAttempts = 0;
