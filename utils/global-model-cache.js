@@ -1,57 +1,99 @@
 /**
- * GLOBAL Model Cache - Loads once, persists across invocations
- * CRITICAL: This runs ONCE per cold start, not per request
+ * GLOBAL Model Cache with Explicit File References
+ * This ensures Vercel's Node File Trace detects the models
  */
 
 const tf = require('@tensorflow/tfjs');
 const path = require('path');
 const fs = require('fs');
 
-// Global state (persists across Vercel function invocations)
+// ============================================================================
+// CRITICAL: Explicit file references for Vercel's Node File Trace
+// ============================================================================
+
+// List all model files explicitly so Vercel knows they're needed
+const CRYPTO_MODEL_FILES = [
+    'temporal_transformer.keras',
+    'hybrid_transformer.keras',
+    'hierarchical_lstm.keras',
+    'bidirectional_attention.keras',
+    'multiscale_transformer.keras'
+];
+
+const FOREX_MODEL_FILES = [
+    'temporal_transformer.keras',
+    'hierarchical_lstm.keras',
+    'hybrid_transformer.keras',
+    'multiscale_transformer.keras'
+];
+
+// Global state (persists across invocations)
 let CRYPTO_MODELS = null;
 let FOREX_MODELS = null;
-let IS_LOADING = false;
-let LOAD_PROMISE = null;
+let IS_CRYPTO_LOADING = false;
+let IS_FOREX_LOADING = false;
+let CRYPTO_LOAD_PROMISE = null;
+let FOREX_LOAD_PROMISE = null;
 
 /**
- * Load multiple models in PARALLEL (3-4s vs 9s sequential)
+ * Verify model files exist at startup
+ * This creates fs references that Vercel's trace can detect
+ */
+function verifyModelFiles(modelNames, modelsDir) {
+    const missing = [];
+    
+    for (const fileName of modelNames) {
+        const filePath = path.join(process.cwd(), modelsDir, fileName);
+        
+        // CRITICAL: This fs.existsSync call is what Node File Trace detects
+        if (!fs.existsSync(filePath)) {
+            missing.push(fileName);
+        }
+    }
+    
+    if (missing.length > 0) {
+        throw new Error(
+            `Missing model files in ${modelsDir}: ${missing.join(', ')}\n` +
+            `Expected location: ${path.join(process.cwd(), modelsDir)}`
+        );
+    }
+    
+    console.log(`✓ Verified ${modelNames.length} model files in ${modelsDir}`);
+}
+
+/**
+ * Load multiple models in PARALLEL
  */
 async function loadModelsParallel(modelNames, modelsDir) {
     console.log(`[GlobalCache] Loading ${modelNames.length} models in PARALLEL...`);
     const startTime = Date.now();
     
     // Load ALL models simultaneously
-    const loadPromises = modelNames.map(async (name) => {
+    const loadPromises = modelNames.map(async (fileName) => {
         try {
-            const modelPath = path.join(process.cwd(), modelsDir, `${name}.keras`);
-            
-            if (!fs.existsSync(modelPath)) {
-                console.warn(`⚠️ Model missing: ${name}`);
-                return null;
-            }
-            
+            const modelPath = path.join(process.cwd(), modelsDir, fileName);
             const model = await tf.loadLayersModel(`file://${modelPath}`);
+            
+            const name = fileName.replace('.keras', '');
             console.log(`  ✓ ${name} loaded`);
-            return { name, model };
+            return { name, model, fileName };
         } catch (error) {
-            console.error(`  ✗ ${name} failed: ${error.message}`);
+            console.error(`  ✗ ${fileName} failed: ${error.message}`);
             return null;
         }
     });
     
-    // Wait for ALL to complete
     const results = await Promise.all(loadPromises);
     const loadedModels = results.filter(r => r !== null);
     
     const elapsed = Date.now() - startTime;
-    console.log(`[GlobalCache] Loaded ${loadedModels.length}/${modelNames.length} models in ${elapsed}ms`);
+    console.log(`[GlobalCache] Loaded ${loadedModels.length}/${modelNames.length} in ${elapsed}ms`);
     
     return loadedModels;
 }
 
 /**
  * WARM UP models with dummy prediction
- * Critical: Eliminates first-run compilation delay
  */
 async function warmUpModels(models, inputShape) {
     console.log('[GlobalCache] Warming up models...');
@@ -61,63 +103,60 @@ async function warmUpModels(models, inputShape) {
     for (const { name, model } of models) {
         try {
             const warmupResult = model.predict(dummyInput);
-            await warmupResult.data(); // Force execution
+            await warmupResult.data();
             warmupResult.dispose();
-            console.log(`  ✓ ${name} warmed up`);
+            console.log(`  ✓ ${name} warmed`);
         } catch (error) {
             console.warn(`  ⚠️ ${name} warmup failed: ${error.message}`);
         }
     }
     
     dummyInput.dispose();
-    console.log('[GlobalCache] Warmup complete');
 }
 
 /**
  * Initialize CRYPTO models globally
  */
 async function initializeCryptoModels() {
-    if (CRYPTO_MODELS) return CRYPTO_MODELS; // Already loaded
-    if (IS_LOADING && LOAD_PROMISE) return LOAD_PROMISE; // Loading in progress
+    if (CRYPTO_MODELS) return CRYPTO_MODELS;
+    if (IS_CRYPTO_LOADING && CRYPTO_LOAD_PROMISE) return CRYPTO_LOAD_PROMISE;
     
-    IS_LOADING = true;
+    IS_CRYPTO_LOADING = true;
     
-    LOAD_PROMISE = (async () => {
+    CRYPTO_LOAD_PROMISE = (async () => {
         try {
             console.log('\n🚀 [COLD START] Initializing crypto models...');
             
-            const modelNames = [
-                'temporal_transformer',
-                'hybrid_transformer',
-                'hierarchical_lstm',
-                'bidirectional_attention',
-                'multiscale_transformer'
-            ];
+            const modelsDir = 'models/crypto';
             
-            // PARALLEL LOAD (saves 5-7s!)
-            const loaded = await loadModelsParallel(modelNames, 'models/crypto');
+            // CRITICAL: Verify files exist (creates fs references for Vercel)
+            verifyModelFiles(CRYPTO_MODEL_FILES, modelsDir);
+            
+            // Load in parallel
+            const loaded = await loadModelsParallel(CRYPTO_MODEL_FILES, modelsDir);
             
             if (loaded.length === 0) {
                 throw new Error('No crypto models loaded!');
             }
             
-            // WARM UP (saves 2-3s on first real prediction!)
-            await warmUpModels(loaded, [1, 50]); // Adjust shape to match your features
+            // Warm up with correct input shape
+            await warmUpModels(loaded, [1, 50]);
             
             CRYPTO_MODELS = loaded;
-            IS_LOADING = false;
+            IS_CRYPTO_LOADING = false;
             
-            console.log(`✅ Crypto models ready: ${loaded.length} models cached globally\n`);
+            console.log(`✅ Crypto models ready: ${loaded.length} models\n`);
             return loaded;
             
         } catch (error) {
-            IS_LOADING = false;
-            LOAD_PROMISE = null;
+            IS_CRYPTO_LOADING = false;
+            CRYPTO_LOAD_PROMISE = null;
+            console.error('❌ Crypto model initialization failed:', error.message);
             throw error;
         }
     })();
     
-    return LOAD_PROMISE;
+    return CRYPTO_LOAD_PROMISE;
 }
 
 /**
@@ -125,23 +164,42 @@ async function initializeCryptoModels() {
  */
 async function initializeForexModels() {
     if (FOREX_MODELS) return FOREX_MODELS;
+    if (IS_FOREX_LOADING && FOREX_LOAD_PROMISE) return FOREX_LOAD_PROMISE;
     
-    console.log('\n🚀 [COLD START] Initializing forex models...');
+    IS_FOREX_LOADING = true;
     
-    const modelNames = [
-        'temporal_transformer',
-        'hierarchical_lstm',
-        'hybrid_transformer',
-        'multiscale_transformer'
-    ];
+    FOREX_LOAD_PROMISE = (async () => {
+        try {
+            console.log('\n🚀 [COLD START] Initializing forex models...');
+            
+            const modelsDir = 'models/forex';
+            
+            // CRITICAL: Verify files exist
+            verifyModelFiles(FOREX_MODEL_FILES, modelsDir);
+            
+            const loaded = await loadModelsParallel(FOREX_MODEL_FILES, modelsDir);
+            
+            if (loaded.length === 0) {
+                throw new Error('No forex models loaded!');
+            }
+            
+            await warmUpModels(loaded, [1, 40]);
+            
+            FOREX_MODELS = loaded;
+            IS_FOREX_LOADING = false;
+            
+            console.log(`✅ Forex models ready: ${loaded.length} models\n`);
+            return loaded;
+            
+        } catch (error) {
+            IS_FOREX_LOADING = false;
+            FOREX_LOAD_PROMISE = null;
+            console.error('❌ Forex model initialization failed:', error.message);
+            throw error;
+        }
+    })();
     
-    const loaded = await loadModelsParallel(modelNames, 'models/forex');
-    await warmUpModels(loaded, [1, 40]); // Adjust to forex feature count
-    
-    FOREX_MODELS = loaded;
-    console.log(`✅ Forex models ready: ${loaded.length} models cached globally\n`);
-    
-    return loaded;
+    return FOREX_LOAD_PROMISE;
 }
 
 /**
@@ -165,19 +223,34 @@ async function getForexModels() {
 }
 
 /**
- * Get memory stats
+ * Get stats
  */
 function getGlobalCacheStats() {
+    const tfMem = tf.memory();
     return {
-        cryptoModels: CRYPTO_MODELS ? CRYPTO_MODELS.length : 0,
-        forexModels: FOREX_MODELS ? FOREX_MODELS.length : 0,
-        isLoading: IS_LOADING,
-        tfMemory: tf.memory()
+        crypto: {
+            loaded: CRYPTO_MODELS ? CRYPTO_MODELS.length : 0,
+            isLoading: IS_CRYPTO_LOADING,
+            modelFiles: CRYPTO_MODEL_FILES
+        },
+        forex: {
+            loaded: FOREX_MODELS ? FOREX_MODELS.length : 0,
+            isLoading: IS_FOREX_LOADING,
+            modelFiles: FOREX_MODEL_FILES
+        },
+        tfMemory: {
+            numBytes: tfMem.numBytes,
+            numBytesMB: (tfMem.numBytes / 1024 / 1024).toFixed(2),
+            numTensors: tfMem.numTensors
+        }
     };
 }
 
 module.exports = {
     getCryptoModels,
     getForexModels,
-    getGlobalCacheStats
+    getGlobalCacheStats,
+    // Export file lists for verification
+    CRYPTO_MODEL_FILES,
+    FOREX_MODEL_FILES
 };

@@ -1,15 +1,17 @@
 {
   "version": 2,
-  "buildCommand": "npm install",
-  "outputDirectory": "./",
+  "buildCommand": "npm install && npm run verify-models",
   "functions": {
     "api/**/*.js": {
       "memory": 1024,
-      "maxDuration": 10,
-      "includeFiles": "models/**"
+      "maxDuration": 10
     }
   },
   "rewrites": [
+    {
+      "source": "/api/warm-up",
+      "destination": "/api/warm-up"
+    },
     {
       "source": "/api/predict-crypto",
       "destination": "/api/predict-crypto"

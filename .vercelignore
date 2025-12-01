@@ -1,0 +1,23 @@
+# .vercelignore - Files to exclude from ALL deployments
+
+# Development
+.env.local
+.env.*.local
+.env.example
+.DS_Store
+*.swp
+
+# Documentation
+README.md
+LICENSE
+*.md
+
+# Tests (save deployment size)
+test/
+__tests__/
+*.test.js
+*. test-crypto-prediction.js
+*. test-forex-prediction.js
+
+# CRITICAL: Models must NOT be listed here
+# They MUST be deployed

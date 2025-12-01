@@ -13,7 +13,11 @@
     "test:forex": "node test/test-forex-prediction.js",
     "test:features": "node test/validate-features.js",
     "test:all": "npm run test:features && npm run test:crypto && npm run test:forex",
-    "health": "node test/health-check.js"
+    "health": "node test/health-check.js",
+    "verify-models": "node scripts/verify-models.js",
+    "vercel-build": "npm run verify-models",
+    "pretest": "npm run verify-models",
+    "predeploy": "npm run test:all"
   },
   "dependencies": {
     "@tensorflow/tfjs": "^4.22.0",
@@ -31,8 +35,18 @@
     "crypto",
     "forex",
     "predictions",
-    "neural-networks"
+    "neural-networks",
+    "algorithmic-trading",
+    "financial-modeling"
   ],
   "author": "",
-  "license": "MIT"
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Ultim8-netizen/trading-models-api.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Ultim8-netizen/trading-models-api/issues"
+  },
+  "homepage": "https://github.com/Ultim8-netizen/trading-models-api#readme"
 }

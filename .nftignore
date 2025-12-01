@@ -1,0 +1,18 @@
+# .nftignore - Tell Vercel's Node File Trace what to exclude
+# Everything NOT listed here is potentially included
+
+# Exclude development files
+.git/
+.github/
+node_modules/.cache/
+*.md
+.env.example
+
+# Exclude test files
+test/
+*.test.js
+*. test-crypto-prediction.js
+*. test-forex-prediction.js
+
+# CRITICAL: DO NOT exclude models
+# (No models/ entry here = models WILL be included)
