@@ -278,11 +278,19 @@ class DataOrchestrator {
         data = await fetchWithRetry(symbol, forexFetcher.fetchForexData, 'forex');
       }
       
-      // Validate data
+      // Validate data - FIXED VERSION
       const validation = this._validateData(data);
       if (!validation.valid) {
-        throw new Error(`Validation failed: ${validation.errors.slice(0, 2).join('; ')}`);
+        // Log detailed validation errors
+        console.error('[Validation] Failed:');
+        validation.errors.forEach(err => console.error(`  - ${err}`));
+        console.error('[Validation] Timeframe lengths:', validation.timeframeLengths);
+        
+        throw new Error(`Validation failed: ${validation.errors.slice(0, 3).join('; ')}`);
       }
+      
+      console.log('[Validation] ✓ Passed');
+      console.log(`[Validation] Lengths: 1h=${validation.timeframeLengths['1h']}, 4h=${validation.timeframeLengths['4h']}, 1d=${validation.timeframeLengths['1d']}`);
       
       // Cache data
       if (CONFIG.ENABLE_CACHE) {
@@ -323,6 +331,7 @@ class DataOrchestrator {
       throw error;
     }
   }
+  
   /**
    * Fetch multiple symbols efficiently
    * Uses cache and parallel requests where possible
@@ -428,14 +437,20 @@ class DataOrchestrator {
   }
   
   /**
-   * Validate data structure
+   * Validate data structure - FIXED VERSION
+   * Allows different lengths for different timeframes
    */
   _validateData(data) {
     const errors = [];
     const requiredTimeframes = ['1h', '4h', '1d'];
     const requiredFields = ['open', 'high', 'low', 'close', 'volume'];
     
+    // Store lengths for each timeframe separately
+    const timeframeLengths = {};
+    
     for (const tf of requiredTimeframes) {
+      const tfLengths = new Set();
+      
       for (const field of requiredFields) {
         const key = `${tf}_${field}`;
         
@@ -444,22 +459,37 @@ class DataOrchestrator {
           continue;
         }
         
-        if (!Array.isArray(data[key]) || data[key].length === 0) {
+        if (!Array.isArray(data[key])) {
+          errors.push(`Not array: ${key}`);
+          continue;
+        }
+        
+        if (data[key].length === 0) {
           errors.push(`Empty: ${key}`);
           continue;
         }
+        
+        tfLengths.add(data[key].length);
       }
+      
+      // CRITICAL: All fields within a SINGLE timeframe must have same length
+      // BUT different timeframes can have different lengths
+      if (tfLengths.size > 1) {
+        errors.push(`Inconsistent lengths in ${tf}: ${Array.from(tfLengths).join(', ')}`);
+      }
+      
+      timeframeLengths[tf] = Array.from(tfLengths)[0] || 0;
     }
     
-    const lengths = new Set();
-    for (const key of Object.keys(data)) {
-      if (Array.isArray(data[key])) {
-        lengths.add(data[key].length);
-      }
+    // Optional: Validate minimum data points per timeframe
+    if (timeframeLengths['1h'] && timeframeLengths['1h'] < 50) {
+      errors.push(`Insufficient 1h data: ${timeframeLengths['1h']} < 50`);
     }
-    
-    if (lengths.size > 1) {
-      errors.push(`Inconsistent lengths`);
+    if (timeframeLengths['4h'] && timeframeLengths['4h'] < 20) {
+      errors.push(`Insufficient 4h data: ${timeframeLengths['4h']} < 20`);
+    }
+    if (timeframeLengths['1d'] && timeframeLengths['1d'] < 20) {
+      errors.push(`Insufficient 1d data: ${timeframeLengths['1d']} < 20`);
     }
     
     const dataPoints = data['1h_close']?.length || 0;
@@ -467,7 +497,8 @@ class DataOrchestrator {
     return {
       valid: errors.length === 0,
       errors,
-      dataPoints
+      dataPoints,
+      timeframeLengths
     };
   }
 }
